@@ -3,8 +3,8 @@
 //! Resolution order:
 //!   1. Dev shortcut: a sibling repo checkout via $HERMES_SETUP_DEV_REPO_ROOT
 //!      env var. Lets devs iterate without re-publishing the script.
-//!   2. Bundled fallback: if the installer was bundled with a script (e.g.
-//!      tauri's `resource` mechanism), serve from there. Not used today.
+//!   2. Bundled fallback: use the install scripts embedded into this binary at
+//!      build time, so local bootstrap fixes ship with the generated installer.
 //!   3. Network: download from GitHub raw at a pinned commit or branch.
 //!      Commit pins are immutable; branch pins are HEAD-tracking.
 //!
@@ -63,6 +63,9 @@ impl ScriptKind {
     }
 }
 
+const BUNDLED_INSTALL_PS1: &[u8] = include_bytes!("../../../../scripts/install.ps1");
+const BUNDLED_INSTALL_SH: &[u8] = include_bytes!("../../../../scripts/install.sh");
+
 /// Validates a string looks like a git SHA (7+ hex chars). Mirrors
 /// `STAMP_COMMIT_RE` from bootstrap-runner.cjs.
 fn is_valid_commit(s: &str) -> bool {
@@ -97,7 +100,28 @@ pub async fn resolve(
         }
     }
 
-    // 2. (Not implemented) bundled fallback.
+    // 2. Bundled fallback. This is the default for shipped installers so the
+    // build always executes the scripts from the same checkout it was built
+    // from. Set HERMES_FORCE_REMOTE_INSTALL_SCRIPT=1 to bypass this during
+    // debugging and fetch from GitHub instead.
+    if std::env::var("HERMES_FORCE_REMOTE_INSTALL_SCRIPT")
+        .map(|v| v.trim() != "1")
+        .unwrap_or(true)
+    {
+        let bundled = bundled_path(kind);
+        materialize_bundled_script(kind, &bundled)?;
+        emit_log(&format!(
+            "[bootstrap] using bundled {} at {}",
+            kind.filename(),
+            bundled.display()
+        ));
+        return Ok(ResolvedScript {
+            path: bundled,
+            source: ScriptSource::Bundled,
+            commit: pin.commit.clone(),
+            branch: pin.branch.clone(),
+        });
+    }
 
     // 3. Network. Pin must be a real commit or a branch ref.
     let commit_or_ref = match (&pin.commit, &pin.branch) {
@@ -146,6 +170,47 @@ pub async fn resolve(
         commit: pin.commit.clone(),
         branch: pin.branch.clone(),
     })
+}
+
+fn bundled_path(kind: ScriptKind) -> PathBuf {
+    let version = env!("CARGO_PKG_VERSION");
+    let filename = match kind {
+        ScriptKind::Ps1 => format!("install-bundled-{version}.ps1"),
+        ScriptKind::Sh => format!("install-bundled-{version}.sh"),
+    };
+    paths::bootstrap_cache_dir().join(filename)
+}
+
+fn bundled_bytes(kind: ScriptKind) -> &'static [u8] {
+    match kind {
+        ScriptKind::Ps1 => BUNDLED_INSTALL_PS1,
+        ScriptKind::Sh => BUNDLED_INSTALL_SH,
+    }
+}
+
+fn materialize_bundled_script(kind: ScriptKind, dest_path: &Path) -> Result<()> {
+    if let Some(parent) = dest_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!("creating bootstrap-cache parent dir {}", parent.display())
+        })?;
+    }
+
+    std::fs::write(dest_path, bundled_bytes(kind))
+        .with_context(|| format!("writing bundled script to {}", dest_path.display()))?;
+
+    #[cfg(unix)]
+    if matches!(kind, ScriptKind::Sh) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(dest_path)
+            .with_context(|| format!("reading metadata for {}", dest_path.display()))?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(dest_path, perms).with_context(|| {
+            format!("setting executable bit on {}", dest_path.display())
+        })?;
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]

@@ -31,12 +31,12 @@ def temp_hermes_home():
 def test_credentials():
     """Test credentials fixture."""
     return {
-        "api_key": "sk-test-1234567890abcdef",
+        "api_key": "fake-bootstrap-api-key",
         "base_url": "https://api.openai.com/v1",
         "model_name": "gpt-4o-mini",
         "memory_api_url": "http://localhost:8000",
         "email_address": "test@example.com",
-        "email_password": "secure-pass-123",
+        "email_password": "fake-bootstrap-password",
         "imap_server": "imap.example.com",
         "smtp_server": "smtp.example.com",
     }
@@ -109,6 +109,8 @@ class TestBashCredentialConsumption:
             "Base URL env var substitution missing"
         assert 'base_url' in content, \
             "base_url substitution not found"
+        assert 'provider: custom' in content, \
+            "custom provider pinning missing for bootstrap base_url"
     
     def test_mcp_servers_block_added(self):
         """Verify mcp_servers block is added when Memory API URL provided."""
@@ -200,6 +202,8 @@ class TestPowerShellCredentialConsumption:
             "Base URL env var substitution missing"
         assert 'base_url' in content, \
             "base_url substitution not found"
+        assert 'provider: custom' in content, \
+            "custom provider pinning missing for bootstrap base_url"
     
     def test_mcp_servers_block_added(self):
         """Verify mcp_servers block is added when Memory API URL provided."""
@@ -345,11 +349,8 @@ class TestConfigurationGeneration:
     
     def test_env_example_exists(self):
         """Verify .env.example exists in repo."""
-        env_example = Path(
-            "/Users/gonzalooberreuter/Work/hermes-agent/.env.example"
-        )
         # .env.example may not be committed, so we just check if it's documented
-        assert True, "Can't enforce .env.example existence without committing secrets"
+        pass
 
 
 class TestIntegrationFlow:
@@ -378,14 +379,6 @@ class TestIntegrationFlow:
     
     def test_no_credentials_leaked_in_code(self):
         """Ensure test credentials aren't hardcoded anywhere."""
-        exclude_patterns = [
-            "test_bootstrap",  # This file
-            ".git",
-            "node_modules",
-            "venv",
-            ".env",
-        ]
-        
         # Just verify the test itself doesn't have real secrets
         test_file = Path(__file__)
         content = test_file.read_text()

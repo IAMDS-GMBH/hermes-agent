@@ -1791,6 +1791,7 @@ function Apply-BootstrapCredentials {
 
         # Replace model.base_url
         if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_BASE_URL)) {
+            $config = $config -replace '^\s+provider:.*$', '  provider: custom'
             $escapedUrl = $env:HERMES_BOOTSTRAP_BASE_URL -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '^\s+base_url:.*$', "  base_url: $escapedUrl"
         }

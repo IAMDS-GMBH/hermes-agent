@@ -1673,6 +1673,7 @@ apply_bootstrap_credentials() {
 
         # Replace model.base_url
         if [ -n "${HERMES_BOOTSTRAP_BASE_URL:-}" ]; then
+            sed -i.bak 's/^  provider: .*/  provider: custom/' "$HERMES_HOME/config.yaml" || true
             # Escape URL for sed (forward slashes need escaping)
             escaped_url=$(printf '%s\n' "${HERMES_BOOTSTRAP_BASE_URL}" | sed 's/[\/&]/\\&/g')
             sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
