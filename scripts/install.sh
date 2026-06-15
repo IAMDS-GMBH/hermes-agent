@@ -1732,11 +1732,65 @@ MCP_EOF
     fi
 }
 
+resolve_aimds_installer_dir() {
+    if [ -n "${HERMES_BOOTSTRAP_AIMDS_SETUP_DIR:-}" ] && [ -d "${HERMES_BOOTSTRAP_AIMDS_SETUP_DIR}/installer" ]; then
+        printf '%s\n' "${HERMES_BOOTSTRAP_AIMDS_SETUP_DIR}/installer"
+        return 0
+    fi
+
+    if [ -d "$INSTALL_DIR/installer" ]; then
+        printf '%s\n' "$INSTALL_DIR/installer"
+        return 0
+    fi
+
+    if [ -d "$INSTALL_DIR/../aimds-setup/installer" ]; then
+        printf '%s\n' "$INSTALL_DIR/../aimds-setup/installer"
+        return 0
+    fi
+
+    return 1
+}
+
+sync_aimds_custom_assets() {
+    local installer_dir skills_src scripts_src
+    installer_dir="$(resolve_aimds_installer_dir 2>/dev/null || true)"
+    [ -n "$installer_dir" ] || return 0
+
+    skills_src="$installer_dir/skills"
+    scripts_src="$installer_dir/scripts"
+
+    if [ -d "$skills_src" ] && [ -n "$(find "$skills_src" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        log_info "Syncing AIMDS custom skills from $skills_src ..."
+        mkdir -p "$HERMES_HOME/skills"
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$skills_src/" "$HERMES_HOME/skills/"
+        else
+            cp -R "$skills_src/"* "$HERMES_HOME/skills/" 2>/dev/null || true
+        fi
+        log_success "AIMDS custom skills synced"
+    fi
+
+    if [ -d "$scripts_src" ] && [ -n "$(find "$scripts_src" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        log_info "Syncing AIMDS installer helper tools from $scripts_src ..."
+        mkdir -p "$HERMES_HOME/tools/aimds-installer"
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$scripts_src/" "$HERMES_HOME/tools/aimds-installer/"
+        else
+            cp -R "$scripts_src/"* "$HERMES_HOME/tools/aimds-installer/" 2>/dev/null || true
+        fi
+        log_success "AIMDS installer helper tools synced"
+    fi
+}
+
 copy_config_templates() {
     log_info "Setting up configuration files..."
 
+    local hermes_work_dir leveldb_dir seed_script
+    hermes_work_dir="$HOME/Documents/HermesWorkingDirectory"
+
     # Create ~/.hermes directory structure (config at top level, code in subdir)
     mkdir -p "$HERMES_HOME"/{cron,sessions,logs,pairing,hooks,image_cache,audio_cache,memories,skills}
+    mkdir -p "$hermes_work_dir"
 
     # Create .env at ~/.hermes/.env (top level, easy to find)
     if [ ! -f "$HERMES_HOME/.env" ]; then
@@ -1766,9 +1820,30 @@ copy_config_templates() {
         log_info "~/.hermes/config.yaml already exists, keeping it"
     fi
 
-    # Create SOUL.md if it doesn't exist (global persona file)
-    if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
-        cat > "$HERMES_HOME/SOUL.md" << 'SOUL_EOF'
+    # Optionally merge AIMDS custom skills/tools when AIMDS installer assets
+    # are available alongside this checkout.
+    sync_aimds_custom_assets
+
+    # Keep parity with AIMDS installer defaults: use a stable Documents working
+    # directory rather than repo-relative ".".
+    if [ -f "$HERMES_HOME/config.yaml" ]; then
+        escaped_cwd=$(printf '%s\n' "$hermes_work_dir" | sed 's/[\/&]/\\&/g')
+        sed -i.bak "s|^  cwd: .*|  cwd: $escaped_cwd|" "$HERMES_HOME/config.yaml" || true
+        rm -f "$HERMES_HOME/config.yaml.bak"
+    fi
+
+    # Seed Electron localStorage so Hermes Desktop picks up the working
+    # directory on first launch.
+    leveldb_dir="$HOME/Library/Application Support/Hermes/Local Storage/leveldb"
+    seed_script="$INSTALL_DIR/installer/scripts/seed-workspace-cwd.py"
+    if [ -f "$seed_script" ] && command -v python3 >/dev/null 2>&1; then
+        rm -rf "$leveldb_dir"
+        python3 "$seed_script" "$leveldb_dir" "$hermes_work_dir" >/dev/null 2>&1 || true
+    fi
+
+    # Keep parity with AIMDS installer mechanics: always overwrite SOUL.md
+    # so reruns keep persona defaults in sync.
+    cat > "$HERMES_HOME/SOUL.md" << 'SOUL_EOF'
 # Hermes Agent Persona
 
 <!--
@@ -1785,8 +1860,7 @@ This file is loaded fresh each message -- no restart needed.
 Delete the contents (or this file) to use the default personality.
 -->
 SOUL_EOF
-        log_success "Created ~/.hermes/SOUL.md (edit to customize personality)"
-    fi
+    log_success "Wrote ~/.hermes/SOUL.md (edit to customize personality)"
 
     log_success "Configuration directory ready: ~/.hermes/"
 

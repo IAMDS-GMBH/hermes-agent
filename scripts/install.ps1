@@ -1853,8 +1853,54 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
     }
 }
 
+function Resolve-AimdsInstallerDir {
+    if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_AIMDS_SETUP_DIR)) {
+        $fromEnv = Join-Path $env:HERMES_BOOTSTRAP_AIMDS_SETUP_DIR 'installer'
+        if (Test-Path $fromEnv) { return $fromEnv }
+    }
+
+    $inRepo = Join-Path $InstallDir 'installer'
+    if (Test-Path $inRepo) { return $inRepo }
+
+    $siblingAimds = Join-Path (Split-Path $InstallDir -Parent) 'aimds-setup\installer'
+    if (Test-Path $siblingAimds) { return $siblingAimds }
+
+    return $null
+}
+
+function Sync-AimdsCustomAssets {
+    $installerDir = Resolve-AimdsInstallerDir
+    if ([string]::IsNullOrWhiteSpace($installerDir)) { return }
+
+    $skillsSrc = Join-Path $installerDir 'skills'
+    if (Test-Path $skillsSrc) {
+        $skillItems = Get-ChildItem -Path $skillsSrc -ErrorAction SilentlyContinue
+        if ($skillItems) {
+            $skillsDest = Join-Path $HermesHome 'skills'
+            New-Item -ItemType Directory -Force -Path $skillsDest | Out-Null
+            Write-Info "Syncing AIMDS custom skills from $skillsSrc ..."
+            Copy-Item -Path "$skillsSrc\*" -Destination $skillsDest -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Success "AIMDS custom skills synced"
+        }
+    }
+
+    $scriptsSrc = Join-Path $installerDir 'scripts'
+    if (Test-Path $scriptsSrc) {
+        $scriptItems = Get-ChildItem -Path $scriptsSrc -ErrorAction SilentlyContinue
+        if ($scriptItems) {
+            $scriptsDest = Join-Path $HermesHome 'tools\aimds-installer'
+            New-Item -ItemType Directory -Force -Path $scriptsDest | Out-Null
+            Write-Info "Syncing AIMDS installer helper tools from $scriptsSrc ..."
+            Copy-Item -Path "$scriptsSrc\*" -Destination $scriptsDest -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Success "AIMDS installer helper tools synced"
+        }
+    }
+}
+
 function Copy-ConfigTemplates {
     Write-Info "Setting up configuration files..."
+
+    $hermesWorkDir = Join-Path $HOME 'Documents\HermesWorkingDirectory'
     
     # Create the HERMES_HOME directory structure ($HermesHome, default %LOCALAPPDATA%\hermes)
     New-Item -ItemType Directory -Force -Path "$HermesHome\cron" | Out-Null
@@ -1866,6 +1912,7 @@ function Copy-ConfigTemplates {
     New-Item -ItemType Directory -Force -Path "$HermesHome\audio_cache" | Out-Null
     New-Item -ItemType Directory -Force -Path "$HermesHome\memories" | Out-Null
     New-Item -ItemType Directory -Force -Path "$HermesHome\skills" | Out-Null
+    New-Item -ItemType Directory -Force -Path $hermesWorkDir | Out-Null
 
     
     # Create .env
@@ -1894,8 +1941,33 @@ function Copy-ConfigTemplates {
     } else {
         Write-Info "$configPath already exists, keeping it"
     }
+
+    # Optionally merge AIMDS custom skills/tools when AIMDS installer assets
+    # are available alongside this checkout.
+    Sync-AimdsCustomAssets
+
+    # Keep parity with AIMDS installer defaults: use a stable Documents working
+    # directory rather than repo-relative '.'.
+    if (Test-Path $configPath) {
+        $escapedCwd = $hermesWorkDir -replace '([\\])', '$1$1'
+        $config = Get-Content $configPath -Raw
+        $config = $config -replace '^\s+cwd:.*$', "  cwd: $escapedCwd"
+        $utf8NoBomCfg = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBomCfg)
+    }
+
+    # Seed Electron localStorage so Hermes Desktop picks up the working
+    # directory on first launch.
+    $seedScript = Join-Path $InstallDir 'installer\scripts\seed-workspace-cwd.py'
+    $leveldbDir = Join-Path $env:APPDATA 'Hermes\Local Storage\leveldb'
+    $pythonExeForSeed = "$InstallDir\venv\Scripts\python.exe"
+    if ((Test-Path $seedScript) -and (Test-Path $pythonExeForSeed)) {
+        Remove-Item -Recurse -Force $leveldbDir -ErrorAction SilentlyContinue
+        & $pythonExeForSeed $seedScript $leveldbDir $hermesWorkDir | Out-Null
+    }
     
-    # Create SOUL.md if it doesn't exist (global persona file).
+    # Keep parity with AIMDS installer mechanics: always overwrite SOUL.md
+    # so reruns keep persona defaults in sync.
     # IMPORTANT: write without a BOM.  Windows PowerShell 5.1's
     # ``Set-Content -Encoding UTF8`` writes UTF-8 WITH a byte-order-mark
     # (the default PS5 behaviour), and Hermes's prompt-injection scanner
@@ -1905,8 +1977,7 @@ function Copy-ConfigTemplates {
     # to .NET with an explicit UTF8Encoding($false) -- BOM-free on every
     # PowerShell version.
     $soulPath = "$HermesHome\SOUL.md"
-    if (-not (Test-Path $soulPath)) {
-        $soulContent = @"
+    $soulContent = @"
 # Hermes Agent Persona
 
 <!--
@@ -1923,10 +1994,9 @@ This file is loaded fresh each message -- no restart needed.
 Delete the contents (or this file) to use the default personality.
 -->
 "@
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($soulPath, $soulContent, $utf8NoBom)
-        Write-Success "Created $soulPath (edit to customize personality)"
-    }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($soulPath, $soulContent, $utf8NoBom)
+    Write-Success "Wrote $soulPath (edit to customize personality)"
     
     Write-Success "Configuration directory ready: $HermesHome"
     
