@@ -1865,6 +1865,12 @@ function Resolve-AimdsInstallerDir {
     $siblingAimds = Join-Path (Split-Path $InstallDir -Parent) 'aimds-setup\installer'
     if (Test-Path $siblingAimds) { return $siblingAimds }
 
+    # Bundled bootstrap scripts are materialized into ~/.hermes/bootstrap-cache.
+    # Mirror AIMDS assets there and resolve relative to this script path.
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $bundledInstallerDir = Join-Path $scriptDir 'installer'
+    if (Test-Path $bundledInstallerDir) { return $bundledInstallerDir }
+
     return $null
 }
 
@@ -2395,6 +2401,18 @@ function Install-Desktop {
             throw "desktop workspace npm install failed (exit $code) -- see lines above for cause"
         }
         Write-Success "Desktop workspace dependencies installed"
+
+        # npm can occasionally resolve a mismatched @assistant-ui/store/@assistant-ui/tap
+        # pair in fresh runtime clones, which breaks Vite with:
+        # "./react-shim is not exported ... from @assistant-ui/tap".
+        # Force the known-compatible pair before pack so desktop bootstrap is stable.
+        Write-Info "Pinning desktop UI compatibility deps (@assistant-ui/store 0.2.9, @assistant-ui/tap 0.5.10)..."
+        & $npmExe install --no-save "@assistant-ui/store@0.2.9" "@assistant-ui/tap@0.5.10" 2>&1 | ForEach-Object { "$_" } | Tee-Object -Variable npmPinOut
+        $code = $LASTEXITCODE
+        if ($code -ne 0) {
+            throw "desktop UI compatibility pin failed (exit $code) -- see lines above for cause"
+        }
+        Write-Success "Desktop UI compatibility deps pinned"
     } catch {
         if ($prevEAP) { $ErrorActionPreference = $prevEAP }
         Pop-Location

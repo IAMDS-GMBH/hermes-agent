@@ -1748,6 +1748,15 @@ resolve_aimds_installer_dir() {
         return 0
     fi
 
+    # Bundled bootstrap scripts are materialized into ~/.hermes/bootstrap-cache.
+    # Mirror AIMDS assets there and resolve relative to this script path.
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+    if [ -d "$script_dir/installer" ]; then
+        printf '%s\n' "$script_dir/installer"
+        return 0
+    fi
+
     return 1
 }
 
@@ -2579,6 +2588,17 @@ install_desktop() {
         return 1
     }
     log_success "Desktop workspace dependencies installed"
+
+    # npm can occasionally resolve a mismatched @assistant-ui/store/@assistant-ui/tap
+    # pair in fresh runtime clones, which breaks Vite with:
+    # "./react-shim is not exported ... from @assistant-ui/tap".
+    # Force the known-compatible pair before pack so desktop bootstrap is stable.
+    log_info "Pinning desktop UI compatibility deps (@assistant-ui/store 0.2.9, @assistant-ui/tap 0.5.10)..."
+    ( cd "$INSTALL_DIR" && npm install --no-save @assistant-ui/store@0.2.9 @assistant-ui/tap@0.5.10 ) || {
+        log_error "Failed to pin desktop UI compatibility dependencies"
+        return 1
+    }
+    log_success "Desktop UI compatibility deps pinned"
 
     # 2. Build, with up to three escalating attempts so a transient/blocked
     #    Electron download self-heals instead of failing the whole install:

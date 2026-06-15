@@ -66,6 +66,57 @@ impl ScriptKind {
 const BUNDLED_INSTALL_PS1: &[u8] = include_bytes!("../../../../scripts/install.ps1");
 const BUNDLED_INSTALL_SH: &[u8] = include_bytes!("../../../../scripts/install.sh");
 
+const BUNDLED_AIMDS_ASSETS: &[(&str, &[u8])] = &[
+    (
+        "installer/scripts/seed-workspace-cwd.py",
+        include_bytes!("../../../../installer/scripts/seed-workspace-cwd.py"),
+    ),
+    (
+        "installer/skills/productivity/excel/SKILL.md",
+        include_bytes!("../../../../installer/skills/productivity/excel/SKILL.md"),
+    ),
+    (
+        "installer/skills/productivity/excel/scripts/read.py",
+        include_bytes!("../../../../installer/skills/productivity/excel/scripts/read.py"),
+    ),
+    (
+        "installer/skills/productivity/excel/scripts/write.py",
+        include_bytes!("../../../../installer/skills/productivity/excel/scripts/write.py"),
+    ),
+    (
+        "installer/skills/productivity/pdf/SKILL.md",
+        include_bytes!("../../../../installer/skills/productivity/pdf/SKILL.md"),
+    ),
+    (
+        "installer/skills/productivity/pdf/scripts/pdf.py",
+        include_bytes!("../../../../installer/skills/productivity/pdf/scripts/pdf.py"),
+    ),
+    (
+        "installer/skills/productivity/file-conversion/SKILL.md",
+        include_bytes!("../../../../installer/skills/productivity/file-conversion/SKILL.md"),
+    ),
+    (
+        "installer/skills/productivity/file-conversion/scripts/convert.py",
+        include_bytes!("../../../../installer/skills/productivity/file-conversion/scripts/convert.py"),
+    ),
+    (
+        "installer/skills/productivity/word/SKILL.md",
+        include_bytes!("../../../../installer/skills/productivity/word/SKILL.md"),
+    ),
+    (
+        "installer/skills/productivity/word/scripts/read.py",
+        include_bytes!("../../../../installer/skills/productivity/word/scripts/read.py"),
+    ),
+    (
+        "installer/skills/productivity/word/scripts/write.py",
+        include_bytes!("../../../../installer/skills/productivity/word/scripts/write.py"),
+    ),
+    (
+        "installer/skills/productivity/word/scripts/convert.py",
+        include_bytes!("../../../../installer/skills/productivity/word/scripts/convert.py"),
+    ),
+];
+
 /// Validates a string looks like a git SHA (7+ hex chars). Mirrors
 /// `STAMP_COMMIT_RE` from bootstrap-runner.cjs.
 fn is_valid_commit(s: &str) -> bool {
@@ -110,6 +161,11 @@ pub async fn resolve(
     {
         let bundled = bundled_path(kind);
         materialize_bundled_script(kind, &bundled)?;
+
+        if let Some(cache_root) = bundled.parent() {
+            materialize_bundled_aimds_assets(cache_root)?;
+        }
+
         emit_log(&format!(
             "[bootstrap] using bundled {} at {}",
             kind.filename(),
@@ -208,6 +264,21 @@ fn materialize_bundled_script(kind: ScriptKind, dest_path: &Path) -> Result<()> 
         std::fs::set_permissions(dest_path, perms).with_context(|| {
             format!("setting executable bit on {}", dest_path.display())
         })?;
+    }
+
+    Ok(())
+}
+
+fn materialize_bundled_aimds_assets(cache_root: &Path) -> Result<()> {
+    for (rel_path, bytes) in BUNDLED_AIMDS_ASSETS {
+        let dest = cache_root.join(rel_path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating asset dir {}", parent.display()))?;
+        }
+
+        std::fs::write(&dest, bytes)
+            .with_context(|| format!("writing bundled AIMDS asset {}", dest.display()))?;
     }
 
     Ok(())
