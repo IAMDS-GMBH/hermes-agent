@@ -27,6 +27,16 @@ We value contributions in this order:
 - Building a new skill? Start with [Creating Skills](./creating-skills.md)
 - Building a new inference provider? Start with [Adding Providers](./adding-providers.md)
 
+## Bootstrap installer docs map
+
+If your PR touches installer/bootstrap behavior, keep these docs in sync:
+
+- User quickstart: [Bootstrap Installer Quickstart](../getting-started/bootstrap-installer-quickstart.md)
+- Troubleshooting: [Bootstrap Installer Troubleshooting](../getting-started/bootstrap-installer-troubleshooting.md)
+- Migration: [Migrating from Legacy Installers](../getting-started/bootstrap-installer-migration.md)
+- Architecture: [Bootstrap Installer Architecture](./bootstrap-installer-architecture.md)
+- Env var contract: [Bootstrap Installer Environment Variables](../reference/bootstrap-installer-environment-variables.md)
+
 ## Development Setup
 
 ### Prerequisites

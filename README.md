@@ -130,6 +130,7 @@ All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes
 | Section                                                                                             | What's Covered                                             |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart)                 | Install → setup → first conversation in 2 minutes          |
+| [Bootstrap Installer Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/bootstrap-installer-quickstart) | Guided cross-platform installer flow with credential setup |
 | [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli)                              | Commands, keybindings, personalities, sessions             |
 | [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration)                | Config file, providers, models, all options                |
 | [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging)                | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
@@ -144,6 +145,7 @@ All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes
 | [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing)             | Development setup, PR process, code style                  |
 | [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)                  | All commands and flags                                     |
 | [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference                                 |
+| [Bootstrap Installer Env Vars](https://hermes-agent.nousresearch.com/docs/reference/bootstrap-installer-environment-variables) | Install-time bootstrap credential variable contract        |
 
 ---
 

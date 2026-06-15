@@ -47,6 +47,16 @@ If your skill is official and useful but not universally needed (e.g., a paid se
 
 If your skill is specialized, community-contributed, or niche, it's better suited for a **Skills Hub** — upload it to a skills registry and share it in the [Nous Research Discord](https://discord.gg/NousResearch). Users can install it with `hermes skills install`.
 
+## Bootstrap Installer Docs (Phase 6)
+
+If your PR changes installer/bootstrap behavior, update the bootstrap doc set together:
+
+- `website/docs/getting-started/bootstrap-installer-quickstart.md`
+- `website/docs/getting-started/bootstrap-installer-troubleshooting.md`
+- `website/docs/getting-started/bootstrap-installer-migration.md`
+- `website/docs/developer-guide/bootstrap-installer-architecture.md`
+- `website/docs/reference/bootstrap-installer-environment-variables.md`
+
 ---
 
 ## Memory Providers: Ship as a Standalone Plugin
