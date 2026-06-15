@@ -18,6 +18,17 @@ import { invoke } from '@tauri-apps/api/core'
 // Types — mirror src-tauri/src/events.rs
 // ---------------------------------------------------------------------------
 
+export interface CredentialsData {
+  apiKey: string
+  baseUrl: string
+  modelName: string
+  memoryApiUrl?: string
+  emailAddress?: string
+  emailPassword?: string
+  imapServer?: string
+  smtpServer?: string
+}
+
 export interface StageInfo {
   name: string
   title: string
@@ -60,7 +71,7 @@ const INITIAL: BootstrapStateModel = {
 // Atoms
 // ---------------------------------------------------------------------------
 
-export type Route = 'welcome' | 'progress' | 'success' | 'failure'
+export type Route = 'welcome' | 'credentials' | 'progress' | 'success' | 'failure'
 
 /// How the installer was launched, mirrored from src-tauri AppMode.
 /// 'install' = first-run onboarding (bare launch). 'update' = driven by the
@@ -72,6 +83,7 @@ export const $mode = atom<AppMode>('install')
 export const $bootstrap = atom<BootstrapStateModel>(INITIAL)
 export const $logPath = atom<string | null>(null)
 export const $hermesHome = atom<string | null>(null)
+export const $credentials = atom<CredentialsData | null>(null)
 
 export const $progress = computed($bootstrap, (b) => {
   const total = b.stageOrder.length
@@ -239,7 +251,7 @@ export async function initialize(): Promise<void> {
 // Actions
 // ---------------------------------------------------------------------------
 
-export async function startInstall(opts?: { branch?: string }): Promise<void> {
+export async function startInstall(opts?: { branch?: string; credentials?: CredentialsData }): Promise<void> {
   // Reset before kicking off so a retry from the failure screen clears
   // the previous run's state.
   $bootstrap.set(INITIAL)
@@ -249,9 +261,15 @@ export async function startInstall(opts?: { branch?: string }): Promise<void> {
       commit: null,
       branch: opts?.branch ?? null,
       include_desktop: true,
-      hermes_home: null
+      hermes_home: null,
+      credentials: opts?.credentials ?? null
     }
   })
+}
+
+export async function proceedToInstall(credentials: CredentialsData): Promise<void> {
+  $credentials.set(credentials)
+  await startInstall({ credentials })
 }
 
 export async function startUpdate(): Promise<void> {

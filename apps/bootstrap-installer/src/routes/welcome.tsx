@@ -1,6 +1,6 @@
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
-import { startInstall } from '../store'
+import { $route } from '../store'
 import { ArrowRight } from 'lucide-react'
 
 /*
@@ -43,7 +43,7 @@ export default function Welcome() {
       </div>
 
       <Button
-        onClick={() => void startInstall()}
+        onClick={() => $route.set('credentials')}
         size="lg"
         className="group inline-flex items-center gap-2 px-6"
       >

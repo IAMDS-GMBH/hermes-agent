@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 import { $route, $bootstrap, initialize } from './store'
 import Welcome from './routes/welcome'
+import Credentials from './routes/credentials'
 import Progress from './routes/progress'
 import Success from './routes/success'
 import Failure from './routes/failure'
@@ -26,6 +27,7 @@ export default function App() {
     <div className="relative flex h-full flex-col overflow-hidden bg-background text-foreground">
       <main className="relative z-10 flex flex-1 flex-col overflow-hidden">
         {route === 'welcome' && <Welcome />}
+        {route === 'credentials' && <Credentials />}
         {route === 'progress' && <Progress bootstrap={bootstrap} />}
         {route === 'success' && <Success />}
         {route === 'failure' && <Failure bootstrap={bootstrap} />}

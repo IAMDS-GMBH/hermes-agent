@@ -30,6 +30,18 @@ use crate::AppState;
 // Public Tauri commands
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Deserialize)]
+pub struct CredentialsData {
+    pub api_key: String,
+    pub base_url: String,
+    pub model_name: String,
+    pub memory_api_url: Option<String>,
+    pub email_address: Option<String>,
+    pub email_password: Option<String>,
+    pub imap_server: Option<String>,
+    pub smtp_server: Option<String>,
+}
+
 /// Frontend → Rust: kick off the install.
 #[derive(Debug, Deserialize)]
 pub struct StartBootstrapArgs {
@@ -46,6 +58,8 @@ pub struct StartBootstrapArgs {
     /// Optional override for HERMES_HOME. Tests use this; production
     /// almost always falls back to the OS default.
     pub hermes_home: Option<String>,
+    /// Setup credentials collected from the UI (only during install mode).
+    pub credentials: Option<CredentialsData>,
 }
 
 fn default_true() -> bool {
@@ -102,7 +116,7 @@ pub async fn start_bootstrap(
     let cancel_rx = Arc::new(Mutex::new(Some(cancel_rx)));
 
     tokio::spawn(async move {
-        let result = run_bootstrap(app_for_task.clone(), args_for_task, cancel_rx).await;
+        let result = run_bootstrap(app_for_task.clone(), args_for_task.clone(), cancel_rx).await;
 
         // Reflect terminal state into AppState so get_bootstrap_status()
         // can serve it after the task exits.
@@ -424,6 +438,7 @@ async fn run_bootstrap(
         args.hermes_home.as_deref(),
         None,
         Some("__manifest__".to_string()),
+        args.credentials.as_ref(),
     )
     .await?;
 
@@ -531,6 +546,7 @@ async fn run_bootstrap(
             args.hermes_home.as_deref(),
             local_cancel_rx,
             Some(stage.name.clone()),
+            args.credentials.as_ref(),
         )
         .await?;
 
@@ -686,6 +702,7 @@ async fn run_install_script(
     hermes_home_override: Option<&str>,
     cancel_rx: Option<mpsc::Receiver<()>>,
     stage_name: Option<String>,
+    credentials: Option<&CredentialsData>,
 ) -> Result<powershell::ScriptResult> {
     let app_for_stdout = app.clone();
     let stage_for_stdout = stage_name.clone();
@@ -735,7 +752,7 @@ async fn run_install_script(
         }),
     };
 
-    powershell::run_script(script_path, args, sink, hermes_home_override, cancel_rx)
+    powershell::run_script(script_path, args, sink, hermes_home_override, cancel_rx, credentials)
         .await
         .map_err(|e| {
             tracing::error!(?e, "install script invocation failed");

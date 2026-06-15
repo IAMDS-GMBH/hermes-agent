@@ -13,6 +13,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
+use crate::bootstrap::CredentialsData;
+
 /// Hooks the caller installs to receive output.
 pub struct StreamSink {
     pub on_stdout_line: Box<dyn Fn(&str) + Send + Sync>,
@@ -42,6 +44,7 @@ pub async fn run_script(
     sink: StreamSink,
     hermes_home_override: Option<&str>,
     mut cancel_rx: Option<CancelRx>,
+    credentials: Option<&CredentialsData>,
 ) -> Result<ScriptResult> {
     let mut cmd = build_command(script_path, args);
 
@@ -55,6 +58,29 @@ pub async fn run_script(
 
     if let Some(home) = hermes_home_override {
         cmd.env("HERMES_HOME", home);
+    }
+
+    // Set credentials as env vars for the install script
+    if let Some(creds) = credentials {
+        cmd.env("HERMES_BOOTSTRAP_API_KEY", &creds.api_key);
+        cmd.env("HERMES_BOOTSTRAP_BASE_URL", &creds.base_url);
+        cmd.env("HERMES_BOOTSTRAP_MODEL", &creds.model_name);
+        
+        if let Some(url) = &creds.memory_api_url {
+            cmd.env("HERMES_BOOTSTRAP_MEMORY_API_URL", url);
+        }
+        if let Some(email) = &creds.email_address {
+            cmd.env("HERMES_BOOTSTRAP_EMAIL", email);
+        }
+        if let Some(password) = &creds.email_password {
+            cmd.env("HERMES_BOOTSTRAP_EMAIL_PASSWORD", password);
+        }
+        if let Some(imap) = &creds.imap_server {
+            cmd.env("HERMES_BOOTSTRAP_IMAP_SERVER", imap);
+        }
+        if let Some(smtp) = &creds.smtp_server {
+            cmd.env("HERMES_BOOTSTRAP_SMTP_SERVER", smtp);
+        }
     }
 
     cmd.stdin(Stdio::null())
