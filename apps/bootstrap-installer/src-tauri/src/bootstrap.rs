@@ -30,7 +30,7 @@ use crate::AppState;
 // Public Tauri commands
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CredentialsData {
     pub api_key: String,
     pub base_url: String,
@@ -43,7 +43,7 @@ pub struct CredentialsData {
 }
 
 /// Frontend → Rust: kick off the install.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct StartBootstrapArgs {
     /// Optional override for the commit pin. Defaults to the build-time
     /// pin baked in via `BUILD_PIN_COMMIT`.
