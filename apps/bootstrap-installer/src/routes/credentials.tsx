@@ -42,19 +42,27 @@ export default function Credentials() {
       newErrors.modelName = 'Model name is required'
     }
 
-    // Email validation: only apply when the optional section is enabled.
+    // Email validation: section is optional.
+    // Only enforce required email fields once the user actually starts
+    // entering email credentials (address/password).
     if (showEmailSection) {
-      if (!formData.emailAddress?.trim()) {
-        newErrors.emailAddress = 'Email address required for gateway setup'
-      }
-      if (!formData.emailPassword?.trim()) {
-        newErrors.emailPassword = 'Password required for gateway setup'
-      }
-      if (!formData.imapServer?.trim()) {
-        newErrors.imapServer = 'IMAP server required for gateway setup'
-      }
-      if (!formData.smtpServer?.trim()) {
-        newErrors.smtpServer = 'SMTP server required for gateway setup'
+      const hasEmailIdentity =
+        Boolean(formData.emailAddress?.trim()) ||
+        Boolean(formData.emailPassword?.trim())
+
+      if (hasEmailIdentity) {
+        if (!formData.emailAddress?.trim()) {
+          newErrors.emailAddress = 'Email address required for gateway setup'
+        }
+        if (!formData.emailPassword?.trim()) {
+          newErrors.emailPassword = 'Password required for gateway setup'
+        }
+        if (!formData.imapServer?.trim()) {
+          newErrors.imapServer = 'IMAP server required for gateway setup'
+        }
+        if (!formData.smtpServer?.trim()) {
+          newErrors.smtpServer = 'SMTP server required for gateway setup'
+        }
       }
     }
 
