@@ -1789,21 +1789,28 @@ function Apply-BootstrapCredentials {
             $config = $config -replace '^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
         }
 
-        # Replace model.base_url
+        # Replace model.base_url from base URL root
         if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_BASE_URL)) {
-            $config = $config -replace '^\s+provider:.*$', '  provider: custom'
-            $escapedUrl = $env:HERMES_BOOTSTRAP_BASE_URL -replace '([\\])', '$1$1' # Escape backslashes for regex
-            $config = $config -replace '^\s+base_url:.*$', "  base_url: $escapedUrl"
-        }
+            $baseRoot = $env:HERMES_BOOTSTRAP_BASE_URL.TrimEnd('/')
+            if ($baseRoot.EndsWith('/litellm/v1')) {
+                $baseRoot = $baseRoot.Substring(0, $baseRoot.Length - '/litellm/v1'.Length)
+            } elseif ($baseRoot.EndsWith('/litellm/mcp')) {
+                $baseRoot = $baseRoot.Substring(0, $baseRoot.Length - '/litellm/mcp'.Length)
+            }
 
-        # Add mcp_servers section if Memory API URL provided
-        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MEMORY_API_URL)) {
+            $llmGatewayUrl = "$baseRoot/litellm/v1"
+            $mcpServerUrl = "$baseRoot/litellm/mcp"
+
+            $config = $config -replace '^\s+provider:.*$', '  provider: openai-api'
+            $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
+            $config = $config -replace '^\s+base_url:.*$', "  base_url: $escapedUrl"
+
             if ($config -notmatch 'mcp_servers:') {
                 $mcpBlock = @"
 
 mcp_servers:
   memory:
-    url: $($env:HERMES_BOOTSTRAP_MEMORY_API_URL)
+    url: $mcpServerUrl
     headers:
       Authorization: "Bearer $($env:HERMES_BOOTSTRAP_API_KEY)"
 "@

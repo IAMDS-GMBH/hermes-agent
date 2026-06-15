@@ -1671,16 +1671,21 @@ apply_bootstrap_credentials() {
             sed -i.bak "s/^  default: .*/  default: ${HERMES_BOOTSTRAP_MODEL}/" "$HERMES_HOME/config.yaml" || true
         fi
 
-        # Replace model.base_url
+        # Replace model.base_url from base URL root
         if [ -n "${HERMES_BOOTSTRAP_BASE_URL:-}" ]; then
-            sed -i.bak 's/^  provider: .*/  provider: custom/' "$HERMES_HOME/config.yaml" || true
-            # Escape URL for sed (forward slashes need escaping)
-            escaped_url=$(printf '%s\n' "${HERMES_BOOTSTRAP_BASE_URL}" | sed 's/[\/&]/\\&/g')
-            sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
-        fi
+            base_root="${HERMES_BOOTSTRAP_BASE_URL%/}"
+            case "$base_root" in
+                */litellm/v1) base_root="${base_root%/litellm/v1}" ;;
+                */litellm/mcp) base_root="${base_root%/litellm/mcp}" ;;
+            esac
+            llm_gateway_url="${base_root}/litellm/v1"
+            mcp_server_url="${base_root}/litellm/mcp"
 
-        # Add mcp_servers section if Memory API URL provided
-        if [ -n "${HERMES_BOOTSTRAP_MEMORY_API_URL:-}" ]; then
+            sed -i.bak 's/^  provider: .*/  provider: openai-api/' "$HERMES_HOME/config.yaml" || true
+            # Escape URL for sed (forward slashes need escaping)
+            escaped_url=$(printf '%s\n' "${llm_gateway_url}" | sed 's/[\/&]/\\&/g')
+            sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
+
             # Check if mcp_servers already exists
             if ! grep -q "^mcp_servers:" "$HERMES_HOME/config.yaml"; then
                 # Append mcp_servers block with Bearer auth using API key
@@ -1688,7 +1693,7 @@ apply_bootstrap_credentials() {
 
 mcp_servers:
   memory:
-    url: ${HERMES_BOOTSTRAP_MEMORY_API_URL}
+    url: ${mcp_server_url}
     headers:
       Authorization: "Bearer ${HERMES_BOOTSTRAP_API_KEY}"
 MCP_EOF

@@ -22,7 +22,6 @@ export interface CredentialsData {
   apiKey: string
   baseUrl: string
   modelName: string
-  memoryApiUrl?: string
   emailAddress?: string
   emailPassword?: string
   imapServer?: string
@@ -275,7 +274,6 @@ export async function startInstall(opts?: { branch?: string; credentials?: Crede
           api_key: opts.credentials.apiKey,
           base_url: opts.credentials.baseUrl,
           model_name: opts.credentials.modelName,
-          memory_api_url: opts.credentials.memoryApiUrl ?? null,
           email_address: opts.credentials.emailAddress ?? null,
           email_password: opts.credentials.emailPassword ?? null,
           imap_server: opts.credentials.imapServer ?? null,

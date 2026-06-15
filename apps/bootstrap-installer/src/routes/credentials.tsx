@@ -7,7 +7,6 @@ export interface CredentialsData {
   apiKey: string
   baseUrl: string
   modelName: string
-  memoryApiUrl?: string
   emailAddress?: string
   emailPassword?: string
   imapServer?: string
@@ -17,9 +16,8 @@ export interface CredentialsData {
 export default function Credentials() {
   const [formData, setFormData] = useState<CredentialsData>({
     apiKey: '',
-    baseUrl: 'https://api.openai.com/v1',
-    modelName: 'gpt-4o',
-    memoryApiUrl: '',
+    baseUrl: '',
+    modelName: 'claude-sonnet-4-6',
     emailAddress: '',
     emailPassword: '',
     imapServer: '',
@@ -79,7 +77,6 @@ export default function Credentials() {
       apiKey: formData.apiKey.trim(),
       baseUrl: formData.baseUrl.trim(),
       modelName: formData.modelName.trim(),
-      memoryApiUrl: formData.memoryApiUrl?.trim() || undefined,
       emailAddress: showEmailSection ? formData.emailAddress?.trim() || undefined : undefined,
       emailPassword: showEmailSection ? formData.emailPassword?.trim() || undefined : undefined,
       imapServer: showEmailSection ? formData.imapServer?.trim() || undefined : undefined,
@@ -107,7 +104,7 @@ export default function Credentials() {
           Configuration
         </h1>
         <p className="mb-8 text-sm text-muted-foreground">
-          Enter your KI provider credentials and optional settings.
+          Enter your KI provider credentials. The installer will derive the endpoints from your Base URL.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -149,9 +146,12 @@ export default function Credentials() {
                   type="text"
                   value={formData.baseUrl}
                   onChange={(e) => handleChange('baseUrl', e.target.value)}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder="https://suite.example.com"
                   className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Uses {formData.baseUrl.trim() || 'BASE_URL'}/litellm/v1 for LLM and {formData.baseUrl.trim() || 'BASE_URL'}/litellm/mcp for MCP.
+                </p>
                 {errors.baseUrl && (
                   <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
                     <AlertCircle className="h-3 w-3" />
@@ -180,30 +180,6 @@ export default function Credentials() {
                   </p>
                 )}
               </div>
-            </div>
-          </fieldset>
-
-          {/* Memory API (Optional) */}
-          <fieldset className="rounded-lg border border-border bg-muted/20 p-4">
-            <legend className="mb-4 block text-sm font-medium text-foreground">
-              Centralized Memory API <span className="text-xs text-muted-foreground">(optional)</span>
-            </legend>
-
-            <div>
-              <label htmlFor="memoryApiUrl" className="block text-sm font-medium text-foreground">
-                Memory API URL
-              </label>
-              <input
-                id="memoryApiUrl"
-                type="text"
-                value={formData.memoryApiUrl || ''}
-                onChange={(e) => handleChange('memoryApiUrl', e.target.value)}
-                placeholder="https://api.memory.example.com"
-                className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Leave blank to skip. Will use your API key for authentication.
-              </p>
             </div>
           </fieldset>
 
