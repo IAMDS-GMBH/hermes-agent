@@ -1654,6 +1654,78 @@ EOF
     log_success "hermes command ready"
 }
 
+# Apply credentials from bootstrap env vars (HERMES_BOOTSTRAP_API_KEY, etc.)
+# Called during config setup when installer was launched with credentials.
+apply_bootstrap_credentials() {
+    # If no API key provided, skip — use interactive mode or defaults
+    if [ -z "${HERMES_BOOTSTRAP_API_KEY:-}" ]; then
+        return 0
+    fi
+
+    log_info "Configuring from bootstrap credentials..."
+
+    # Update config.yaml with substituted values
+    if [ -f "$HERMES_HOME/config.yaml" ]; then
+        # Replace model.default
+        if [ -n "${HERMES_BOOTSTRAP_MODEL:-}" ]; then
+            sed -i.bak "s/^  default: .*/  default: ${HERMES_BOOTSTRAP_MODEL}/" "$HERMES_HOME/config.yaml" || true
+        fi
+
+        # Replace model.base_url
+        if [ -n "${HERMES_BOOTSTRAP_BASE_URL:-}" ]; then
+            # Escape URL for sed (forward slashes need escaping)
+            escaped_url=$(printf '%s\n' "${HERMES_BOOTSTRAP_BASE_URL}" | sed 's/[\/&]/\\&/g')
+            sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
+        fi
+
+        # Add mcp_servers section if Memory API URL provided
+        if [ -n "${HERMES_BOOTSTRAP_MEMORY_API_URL:-}" ]; then
+            # Check if mcp_servers already exists
+            if ! grep -q "^mcp_servers:" "$HERMES_HOME/config.yaml"; then
+                # Append mcp_servers block with Bearer auth using API key
+                cat >> "$HERMES_HOME/config.yaml" << MCP_EOF
+
+mcp_servers:
+  memory:
+    url: ${HERMES_BOOTSTRAP_MEMORY_API_URL}
+    headers:
+      Authorization: "Bearer ${HERMES_BOOTSTRAP_API_KEY}"
+MCP_EOF
+            fi
+        fi
+
+        # Clean up backup file
+        rm -f "$HERMES_HOME/config.yaml.bak"
+        log_success "Updated config.yaml with bootstrap credentials"
+    fi
+
+    # Update .env with secrets
+    if [ -f "$HERMES_HOME/.env" ]; then
+        # Write API key
+        {
+            echo "# Added by bootstrap installer"
+            echo "OPENAI_API_KEY=${HERMES_BOOTSTRAP_API_KEY}"
+            
+            # Add email secrets if provided
+            if [ -n "${HERMES_BOOTSTRAP_EMAIL:-}" ]; then
+                echo "# Email gateway configuration"
+                echo "EMAIL_ADDRESS=${HERMES_BOOTSTRAP_EMAIL}"
+                if [ -n "${HERMES_BOOTSTRAP_EMAIL_PASSWORD:-}" ]; then
+                    echo "EMAIL_PASSWORD=${HERMES_BOOTSTRAP_EMAIL_PASSWORD}"
+                fi
+                if [ -n "${HERMES_BOOTSTRAP_IMAP_SERVER:-}" ]; then
+                    echo "IMAP_SERVER=${HERMES_BOOTSTRAP_IMAP_SERVER}"
+                fi
+                if [ -n "${HERMES_BOOTSTRAP_SMTP_SERVER:-}" ]; then
+                    echo "SMTP_SERVER=${HERMES_BOOTSTRAP_SMTP_SERVER}"
+                fi
+            fi
+        } >> "$HERMES_HOME/.env"
+        
+        log_success "Configured .env with API key and email secrets"
+    fi
+}
+
 copy_config_templates() {
     log_info "Setting up configuration files..."
 
@@ -1735,6 +1807,9 @@ SOUL_EOF
             fi
         fi
     fi
+
+    # Apply bootstrap credentials if provided by the installer UI
+    apply_bootstrap_credentials
 }
 
 find_system_browser() {

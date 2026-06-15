@@ -1768,6 +1768,83 @@ function Write-BootstrapMarker {
     Write-Success "Bootstrap marker written: $markerPath"
 }
 
+function Apply-BootstrapCredentials {
+    # Apply credentials from bootstrap env vars (HERMES_BOOTSTRAP_API_KEY, etc.)
+    # Called during config setup when installer was launched with credentials.
+    
+    # If no API key provided, skip — use interactive mode or defaults
+    if ([string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_API_KEY)) {
+        return
+    }
+
+    Write-Info "Configuring from bootstrap credentials..."
+
+    # Update config.yaml with substituted values
+    $configPath = "$HermesHome\config.yaml"
+    if (Test-Path $configPath) {
+        $config = Get-Content $configPath -Raw
+        
+        # Replace model.default
+        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
+            $config = $config -replace '^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
+        }
+
+        # Replace model.base_url
+        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_BASE_URL)) {
+            $escapedUrl = $env:HERMES_BOOTSTRAP_BASE_URL -replace '([\\])', '$1$1' # Escape backslashes for regex
+            $config = $config -replace '^\s+base_url:.*$', "  base_url: $escapedUrl"
+        }
+
+        # Add mcp_servers section if Memory API URL provided
+        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MEMORY_API_URL)) {
+            if ($config -notmatch 'mcp_servers:') {
+                $mcpBlock = @"
+
+mcp_servers:
+  memory:
+    url: $($env:HERMES_BOOTSTRAP_MEMORY_API_URL)
+    headers:
+      Authorization: "Bearer $($env:HERMES_BOOTSTRAP_API_KEY)"
+"@
+                $config += $mcpBlock
+            }
+        }
+
+        # Write config back
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBom)
+        Write-Success "Updated $configPath with bootstrap credentials"
+    }
+
+    # Update .env with secrets
+    $envPath = "$HermesHome\.env"
+    if (Test-Path $envPath) {
+        $envContent = @"
+# Added by bootstrap installer
+OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
+"@
+        
+        # Add email secrets if provided
+        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_EMAIL)) {
+            $envContent += "`n# Email gateway configuration`n"
+            $envContent += "EMAIL_ADDRESS=$($env:HERMES_BOOTSTRAP_EMAIL)`n"
+            
+            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_EMAIL_PASSWORD)) {
+                $envContent += "EMAIL_PASSWORD=$($env:HERMES_BOOTSTRAP_EMAIL_PASSWORD)`n"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_IMAP_SERVER)) {
+                $envContent += "IMAP_SERVER=$($env:HERMES_BOOTSTRAP_IMAP_SERVER)`n"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_SMTP_SERVER)) {
+                $envContent += "SMTP_SERVER=$($env:HERMES_BOOTSTRAP_SMTP_SERVER)`n"
+            }
+        }
+        
+        Add-Content -Path $envPath -Value $envContent -Encoding UTF8
+        Write-Success "Configured $envPath with API key and email secrets"
+    }
+}
+
 function Copy-ConfigTemplates {
     Write-Info "Setting up configuration files..."
     
@@ -1862,6 +1939,9 @@ Delete the contents (or this file) to use the default personality.
             }
         }
     }
+
+    # Apply bootstrap credentials if provided by the installer UI
+    Apply-BootstrapCredentials
 }
 
 function Install-NodeDeps {
