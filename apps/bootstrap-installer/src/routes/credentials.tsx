@@ -22,8 +22,8 @@ export default function Credentials() {
     memoryApiUrl: '',
     emailAddress: '',
     emailPassword: '',
-    imapServer: 'imap.gmail.com',
-    smtpServer: 'smtp.gmail.com'
+    imapServer: '',
+    smtpServer: ''
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -42,15 +42,8 @@ export default function Credentials() {
       newErrors.modelName = 'Model name is required'
     }
 
-    // Email validation: if any email field is filled, all required ones must be
-    const emailFieldsFilled = [
-      formData.emailAddress?.trim(),
-      formData.emailPassword?.trim(),
-      formData.imapServer?.trim(),
-      formData.smtpServer?.trim()
-    ].filter(Boolean).length
-
-    if (emailFieldsFilled > 0 && emailFieldsFilled < 4) {
+    // Email validation: only apply when the optional section is enabled.
+    if (showEmailSection) {
       if (!formData.emailAddress?.trim()) {
         newErrors.emailAddress = 'Email address required for gateway setup'
       }
@@ -79,10 +72,10 @@ export default function Credentials() {
       baseUrl: formData.baseUrl.trim(),
       modelName: formData.modelName.trim(),
       memoryApiUrl: formData.memoryApiUrl?.trim() || undefined,
-      emailAddress: formData.emailAddress?.trim() || undefined,
-      emailPassword: formData.emailPassword?.trim() || undefined,
-      imapServer: formData.imapServer?.trim() || undefined,
-      smtpServer: formData.smtpServer?.trim() || undefined
+      emailAddress: showEmailSection ? formData.emailAddress?.trim() || undefined : undefined,
+      emailPassword: showEmailSection ? formData.emailPassword?.trim() || undefined : undefined,
+      imapServer: showEmailSection ? formData.imapServer?.trim() || undefined : undefined,
+      smtpServer: showEmailSection ? formData.smtpServer?.trim() || undefined : undefined
     }
 
     await startInstall({ credentials: cleaned })
@@ -213,7 +206,20 @@ export default function Credentials() {
                 type="checkbox"
                 id="enableEmail"
                 checked={showEmailSection}
-                onChange={(e) => setShowEmailSection(e.target.checked)}
+                onChange={(e) => {
+                  const enabled = e.target.checked
+                  setShowEmailSection(enabled)
+                  if (!enabled) {
+                    setErrors((prev) => {
+                      const next = { ...prev }
+                      delete next.emailAddress
+                      delete next.emailPassword
+                      delete next.imapServer
+                      delete next.smtpServer
+                      return next
+                    })
+                  }
+                }}
                 className="h-4 w-4 rounded border-input"
               />
               <label htmlFor="enableEmail" className="text-sm font-medium text-foreground cursor-pointer">

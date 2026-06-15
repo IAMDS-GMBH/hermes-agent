@@ -141,6 +141,7 @@ type BootstrapEvent =
   | BootstrapFailedEvent
 
 let unlisten: UnlistenFn | null = null
+let initializePromise: Promise<void> | null = null
 
 export async function initialize(): Promise<void> {
   if (unlisten) return
@@ -247,24 +248,47 @@ export async function initialize(): Promise<void> {
   }
 }
 
+async function ensureInitialized(): Promise<void> {
+  if (unlisten) return
+  if (!initializePromise) {
+    initializePromise = initialize().finally(() => {
+      initializePromise = null
+    })
+  }
+  await initializePromise
+}
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
 export async function startInstall(opts?: { branch?: string; credentials?: CredentialsData }): Promise<void> {
+  await ensureInitialized()
+
   // Reset before kicking off so a retry from the failure screen clears
   // the previous run's state.
   $bootstrap.set(INITIAL)
   $route.set('progress')
-  await invoke('start_bootstrap', {
-    args: {
-      commit: null,
-      branch: opts?.branch ?? null,
-      include_desktop: true,
-      hermes_home: null,
-      credentials: opts?.credentials ?? null
-    }
-  })
+  try {
+    await invoke('start_bootstrap', {
+      args: {
+        commit: null,
+        branch: opts?.branch ?? null,
+        include_desktop: true,
+        hermes_home: null,
+        credentials: opts?.credentials ?? null
+      }
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    $bootstrap.set({
+      ...INITIAL,
+      status: 'failed',
+      error: `Failed to start installer: ${message}`
+    })
+    $route.set('failure')
+    throw error
+  }
 }
 
 export async function proceedToInstall(credentials: CredentialsData): Promise<void> {
@@ -273,12 +297,25 @@ export async function proceedToInstall(credentials: CredentialsData): Promise<vo
 }
 
 export async function startUpdate(): Promise<void> {
+  await ensureInitialized()
+
   // Update is driven by the desktop handing off (Hermes-Setup.exe --update);
   // there's no welcome click. Reset + jump straight to progress, then let the
   // Rust side stream the synthetic update manifest.
   $bootstrap.set(INITIAL)
   $route.set('progress')
-  await invoke('start_update')
+  try {
+    await invoke('start_update')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    $bootstrap.set({
+      ...INITIAL,
+      status: 'failed',
+      error: `Failed to start update: ${message}`
+    })
+    $route.set('failure')
+    throw error
+  }
 }
 
 export async function cancelInstall(): Promise<void> {
