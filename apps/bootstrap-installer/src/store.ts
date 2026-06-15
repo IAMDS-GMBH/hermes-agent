@@ -270,13 +270,26 @@ export async function startInstall(opts?: { branch?: string; credentials?: Crede
   $bootstrap.set(INITIAL)
   $route.set('progress')
   try {
+    const credentials = opts?.credentials
+      ? {
+          api_key: opts.credentials.apiKey,
+          base_url: opts.credentials.baseUrl,
+          model_name: opts.credentials.modelName,
+          memory_api_url: opts.credentials.memoryApiUrl ?? null,
+          email_address: opts.credentials.emailAddress ?? null,
+          email_password: opts.credentials.emailPassword ?? null,
+          imap_server: opts.credentials.imapServer ?? null,
+          smtp_server: opts.credentials.smtpServer ?? null
+        }
+      : null
+
     await invoke('start_bootstrap', {
       args: {
         commit: null,
         branch: opts?.branch ?? null,
         include_desktop: true,
         hermes_home: null,
-        credentials: opts?.credentials ?? null
+        credentials
       }
     })
   } catch (error) {
