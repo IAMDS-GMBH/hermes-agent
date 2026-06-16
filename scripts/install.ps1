@@ -1782,9 +1782,7 @@ function Apply-BootstrapCredentials {
     # Update config.yaml with substituted values
     $configPath = "$HermesHome\config.yaml"
     if (Test-Path $configPath) {
-        $config = Get-Content $configPath -Raw
-        
-        # Replace model.default
+        $config = Get-Content $configPath -Raw -Encoding UTF8
         if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
             $config = $config -replace '(?m)^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
         }
@@ -1960,7 +1958,7 @@ function Copy-ConfigTemplates {
     # directory rather than repo-relative '.'.
     if (Test-Path $configPath) {
         $escapedCwd = $hermesWorkDir -replace '([\\])', '$1$1'
-        $config = Get-Content $configPath -Raw
+        $config = Get-Content $configPath -Raw -Encoding UTF8
         $config = $config -replace '(?m)^\s+cwd:.*$', "  cwd: $escapedCwd"
         $utf8NoBomCfg = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBomCfg)
