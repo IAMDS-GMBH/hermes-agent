@@ -130,6 +130,17 @@ export default function Credentials() {
       setAvailableModels(models)
       setModelsFetched(true)
       setFormData((prev) => ({ ...prev, modelName: models[0] }))
+      
+      // Write provider models cache for later use during install
+      try {
+        await invoke('write_provider_models_cache', {
+          hermes_home: null, // Use default ~/.hermes
+          model_names: models
+        })
+      } catch (cacheError) {
+        console.warn('Failed to write model cache:', cacheError)
+        // Don't block on cache write failure; proceed anyway
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error('Model fetch error:', message, error)

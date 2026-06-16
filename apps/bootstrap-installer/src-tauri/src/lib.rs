@@ -183,6 +183,7 @@ pub fn run() {
             paths::open_log_dir,
             // Model discovery
             models::fetch_models,
+            models::write_provider_models_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hermes Setup");

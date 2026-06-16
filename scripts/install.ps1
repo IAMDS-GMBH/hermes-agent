@@ -1853,7 +1853,128 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
         Add-Content -Path $envPath -Value $envContent -Encoding UTF8
         Write-Success "Configured $envPath with API key and email secrets"
     }
-}
+
+    # Patch hermes-agent: pin openai-api to $HERMES_BOOTSTRAP_MODEL, suppress copilot
+    if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
+        $modelsPy = "$HermesHome\hermes-agent\hermes_cli\models.py"
+        $switchPy = "$HermesHome\hermes-agent\hermes_cli\model_switch.py"
+
+        # Patch models.py
+        if (Test-Path $modelsPy) {
+            $pythonScript = @"
+import sys, re
+path, model = sys.argv[1], sys.argv[2]
+src = open(path, encoding="utf-8").read()
+
+# Patch cached_provider_model_ids: insert short-circuit after 'if not normalized'
+old = 'normalized = normalize_provider(provider) or (provider or "")\n    if not normalized:\n        return []'
+if "# Custom: pin openai-api" not in src:
+    new = (
+        'normalized = normalize_provider(provider) or (provider or "")\n'
+        '    if not normalized:\n'
+        '        return []\n\n'
+        '    # Custom: pin openai-api to single model; suppress copilot entirely.\n'
+        f'    if normalized in ("openai", "openai-api"):\n'
+        f'        return ["{model}"]\n'
+        '    if normalized == "copilot":\n'
+        '        return []'
+    )
+    src = src.replace(old, new, 1)
+
+# Patch _save_provider_models_cache: strip copilot and re-pin openai-api on every write
+old_save = (
+    'def _save_provider_models_cache(data: dict) -> None:\n'
+    '    """Persist the cache dict. Best-effort — silent on any error."""\n'
+    '    try:\n'
+    '        from utils import atomic_json_write\n\n'
+    '        path = _provider_models_cache_path()\n'
+    '        path.parent.mkdir(parents=True, exist_ok=True)\n'
+    '        atomic_json_write(path, data, indent=None)\n'
+    '    except Exception:\n'
+    '        pass'
+)
+new_save = (
+    'def _save_provider_models_cache(data: dict) -> None:\n'
+    '    """Persist the cache dict. Best-effort — silent on any error."""\n'
+    '    try:\n'
+    '        from utils import atomic_json_write\n\n'
+    '        # Custom: never persist copilot; always pin openai-api.\n'
+    '        filtered = {k: v for k, v in data.items() if k != "copilot"}\n'
+    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": ["{model}"]}}\n\n'
+    '        path = _provider_models_cache_path()\n'
+    '        path.parent.mkdir(parents=True, exist_ok=True)\n'
+    '        atomic_json_write(path, filtered, indent=None)\n'
+    '    except Exception:\n'
+    '        pass'
+)
+if '# Custom: never persist copilot' not in src:
+    src = src.replace(old_save, new_save, 1)
+
+# Clear static copilot model list
+src = re.sub(
+    r'"copilot":\s*\[[^\]]*\],',
+    '"copilot": [],  # Custom: suppressed',
+    src,
+    count=1,
+)
+
+open(path, "w", encoding="utf-8").write(src)
+print("models.py patched")
+"@
+            $modelsPyEscaped = $modelsPy -replace '"', '""'
+            $modelEscaped = $env:HERMES_BOOTSTRAP_MODEL -replace '"', '""'
+            & python.exe -c $pythonScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Patched models.py to pin openai-api and suppress copilot"
+            }
+        }
+
+        # Patch model_switch.py
+        if (Test-Path $switchPy) {
+            $pythonScript = @"
+import sys
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+
+# Override curated copilot to empty right after curated dict is built
+old_curated = 'curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)\n    curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]'
+if '# Custom: copilot suppressed' not in src:
+    new_curated = (
+        'curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)\n'
+        '    curated["copilot"] = []  # Custom: copilot suppressed from picker\n'
+        '    curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]'
+    )
+    src = src.replace(old_curated, new_curated, 1)
+
+# Skip copilot slugs early in the HERMES_OVERLAYS loop
+old_loop = (
+    '        # Resolve Hermes slug — e.g. "github-copilot" → "copilot"\n'
+    '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
+    '        if hermes_slug.lower() in seen_slugs:\n'
+    '            continue'
+)
+if '# Custom: suppress copilot' not in src:
+    new_loop = (
+        '        # Resolve Hermes slug — e.g. "github-copilot" → "copilot"\n'
+        '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
+        '        if hermes_slug.lower() in seen_slugs:\n'
+        '            continue\n\n'
+        '        # Custom: suppress copilot from picker entirely\n'
+        '        if hermes_slug in {"copilot", "copilot-acp", "github-copilot"}:\n'
+        '            continue'
+    )
+    src = src.replace(old_loop, new_loop, 1)
+
+open(path, "w", encoding="utf-8").write(src)
+print("model_switch.py patched")
+"@
+            & python.exe -c $pythonScript $switchPy
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Patched model_switch.py to suppress copilot from picker"
+            }
+        }
+    }
+
 
 function Resolve-AimdsInstallerDir {
     if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_AIMDS_SETUP_DIR)) {
