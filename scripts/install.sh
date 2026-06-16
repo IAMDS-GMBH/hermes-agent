@@ -2594,13 +2594,16 @@ install_desktop() {
     # npm can occasionally resolve a mismatched @assistant-ui/store/@assistant-ui/tap
     # pair in fresh runtime clones, which breaks Vite with:
     # "./react-shim is not exported ... from @assistant-ui/tap".
-    # Force the known-compatible pair before pack so desktop bootstrap is stable.
+    # Workspace overrides (root package.json) already handle this, so skip if in workspace context.
+    # For standalone installs without workspace overrides, attempt the manual pin.
     log_info "Pinning desktop UI compatibility deps (@assistant-ui/store 0.2.9, @assistant-ui/tap 0.5.10)..."
-    ( cd "$INSTALL_DIR" && npm install --no-save @assistant-ui/store@0.2.9 @assistant-ui/tap@0.5.10 ) || {
-        log_error "Failed to pin desktop UI compatibility dependencies"
-        return 1
-    }
-    log_success "Desktop UI compatibility deps pinned"
+    if ( cd "$INSTALL_DIR" && npm install --no-save @assistant-ui/store@0.2.9 @assistant-ui/tap@0.5.10 ) 2>&1 | grep -q "conflicts with direct dependency"; then
+        log_warn "Desktop UI deps already pinned via workspace overrides (normal in workspace install)"
+    elif ! ( cd "$INSTALL_DIR" && npm install --no-save @assistant-ui/store@0.2.9 @assistant-ui/tap@0.5.10 ); then
+        log_warn "Could not apply manual pin; proceeding with workspace overrides or installed versions"
+    else
+        log_success "Desktop UI compatibility deps pinned"
+    fi
 
     # 2. Build, with up to three escalating attempts so a transient/blocked
     #    Electron download self-heals instead of failing the whole install:

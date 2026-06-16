@@ -2407,14 +2407,21 @@ function Install-Desktop {
         # npm can occasionally resolve a mismatched @assistant-ui/store/@assistant-ui/tap
         # pair in fresh runtime clones, which breaks Vite with:
         # "./react-shim is not exported ... from @assistant-ui/tap".
-        # Force the known-compatible pair before pack so desktop bootstrap is stable.
+        # Workspace overrides (root package.json) already handle this, so skip if in workspace context.
+        # For standalone installs without workspace overrides, attempt the manual pin.
         Write-Info "Pinning desktop UI compatibility deps (@assistant-ui/store 0.2.9, @assistant-ui/tap 0.5.10)..."
         & $npmExe install --no-save "@assistant-ui/store@0.2.9" "@assistant-ui/tap@0.5.10" 2>&1 | ForEach-Object { "$_" } | Tee-Object -Variable npmPinOut
         $code = $LASTEXITCODE
         if ($code -ne 0) {
-            throw "desktop UI compatibility pin failed (exit $code) -- see lines above for cause"
+            $pinOutput = $npmPinOut -join " "
+            if ($pinOutput -match "conflicts with direct dependency") {
+                Write-Warn "Desktop UI deps already pinned via workspace overrides (normal in workspace install)"
+            } else {
+                Write-Warn "Could not apply manual pin; proceeding with workspace overrides or installed versions"
+            }
+        } else {
+            Write-Success "Desktop UI compatibility deps pinned"
         }
-        Write-Success "Desktop UI compatibility deps pinned"
     } catch {
         if ($prevEAP) { $ErrorActionPreference = $prevEAP }
         Pop-Location

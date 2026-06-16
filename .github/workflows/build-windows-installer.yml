@@ -87,11 +87,13 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
-      - name: Upload NSIS installer
+      - name: Upload bundled installer exes
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: Hermes-Setup-installer
-          path: apps/bootstrap-installer/src-tauri/target/release/bundle/nsis/*.exe
+          path: |
+            apps/bootstrap-installer/src-tauri/target/release/bundle/*/*.exe
+            apps/bootstrap-installer/src-tauri/target/release/Hermes-Setup.exe
 
       - name: Upload raw exe
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

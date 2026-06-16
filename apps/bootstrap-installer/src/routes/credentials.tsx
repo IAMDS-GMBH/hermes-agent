@@ -115,27 +115,6 @@ export default function Credentials() {
             </legend>
 
             <div className="space-y-4">
-              {/* API Key */}
-              <div>
-                <label htmlFor="apiKey" className="block text-sm font-medium text-foreground">
-                  API Key <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="apiKey"
-                  type="password"
-                  value={formData.apiKey}
-                  onChange={(e) => handleChange('apiKey', e.target.value)}
-                  placeholder="sk-..."
-                  className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                {errors.apiKey && (
-                  <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.apiKey}
-                  </p>
-                )}
-              </div>
-
               {/* Base URL */}
               <div>
                 <label htmlFor="baseUrl" className="block text-sm font-medium text-foreground">
@@ -156,6 +135,27 @@ export default function Credentials() {
                   <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
                     <AlertCircle className="h-3 w-3" />
                     {errors.baseUrl}
+                  </p>
+                )}
+              </div>
+
+              {/* API Key */}
+              <div>
+                <label htmlFor="apiKey" className="block text-sm font-medium text-foreground">
+                  API Key <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="apiKey"
+                  type="password"
+                  value={formData.apiKey}
+                  onChange={(e) => handleChange('apiKey', e.target.value)}
+                  placeholder="sk-..."
+                  className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {errors.apiKey && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.apiKey}
                   </p>
                 )}
               </div>
