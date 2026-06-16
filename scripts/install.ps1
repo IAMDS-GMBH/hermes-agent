@@ -1805,7 +1805,11 @@ function Apply-BootstrapCredentials {
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '(?m)^\s+base_url:.*$', "  base_url: $escapedUrl"
 
-            if ($config -notmatch 'mcp_servers:') {
+            # Only append mcp_servers block if there is no UNCOMMENTED mcp_servers: key.
+            # The template contains "# mcp_servers:" as a comment example, so we must
+            # anchor to line-start with no leading whitespace — matching macOS's
+            # `grep -q "^mcp_servers:"` which also requires the key to be uncommented.
+            if ($config -notmatch '(?m)^mcp_servers:') {
                 $mcpBlock = @"
 
 mcp_servers:
