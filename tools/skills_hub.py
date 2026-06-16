@@ -2910,6 +2910,354 @@ class BrowseShSource(SkillSource):
 
 
 # ---------------------------------------------------------------------------
+# LiteLLM Skills Gateway source adapter
+# ---------------------------------------------------------------------------
+
+class LiteLLMSGatewaySource(SkillSource):
+    """Discover skills from a LiteLLM Skills Gateway and install via existing sources."""
+
+    def __init__(self, auth: GitHubAuth):
+        self.github = GitHubSource(auth=auth)
+        self.url_source = UrlSource()
+        self.base_url = self._derive_gateway_base_url()
+        self.token = (
+            os.getenv("LITELLM_SKILLS_GATEWAY_TOKEN")
+            or os.getenv("LITELLM_KEY")
+            or os.getenv("LITELLM_API_KEY")
+            or ""
+        ).strip()
+        self._entries_by_name: Dict[str, Dict[str, Any]] = {}
+
+    def source_id(self) -> str:
+        return "litellm-gateway"
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self.base_url)
+
+    def trust_level_for(self, identifier: str) -> str:
+        return "community"
+
+    def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
+        entries = self._fetch_entries()
+        if not entries:
+            return []
+
+        query_lower = (query or "").strip().lower()
+        results: List[SkillMeta] = []
+
+        for entry in entries:
+            meta = self._entry_to_meta(entry)
+            if not meta:
+                continue
+            if not query_lower:
+                results.append(meta)
+            else:
+                searchable = " ".join(
+                    [
+                        meta.name,
+                        meta.description,
+                        " ".join(meta.tags or []),
+                        str(entry.get("domain") or ""),
+                        str(entry.get("namespace") or ""),
+                    ]
+                ).lower()
+                if query_lower in searchable:
+                    results.append(meta)
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def fetch(self, identifier: str) -> Optional[SkillBundle]:
+        entry = self._entry_for_identifier(identifier)
+        if not entry:
+            return None
+
+        resolved = self._resolve_install_target(entry)
+        if not resolved:
+            return None
+
+        bundle: Optional[SkillBundle]
+        target_source = resolved["source"]
+        target_identifier = resolved["identifier"]
+        if target_source == "github":
+            bundle = self.github.fetch(target_identifier)
+        elif target_source == "url":
+            bundle = self.url_source.fetch(target_identifier)
+        else:
+            bundle = None
+
+        if not bundle:
+            return None
+
+        bundle.source = self.source_id()
+        bundle.identifier = identifier
+        bundle.trust_level = self.trust_level_for(identifier)
+        bundle.metadata.update(
+            {
+                "gateway_base_url": self.base_url,
+                "gateway_name": entry.get("name"),
+                "gateway_domain": entry.get("domain"),
+                "gateway_namespace": entry.get("namespace"),
+                "resolved_source": target_source,
+                "resolved_identifier": target_identifier,
+            }
+        )
+        return bundle
+
+    def inspect(self, identifier: str) -> Optional[SkillMeta]:
+        entry = self._entry_for_identifier(identifier)
+        if not entry:
+            return None
+
+        meta = self._entry_to_meta(entry)
+        if not meta:
+            return None
+
+        resolved = self._resolve_install_target(entry)
+        if not resolved:
+            return meta
+
+        target_source = resolved["source"]
+        target_identifier = resolved["identifier"]
+        upstream: Optional[SkillMeta]
+        if target_source == "github":
+            upstream = self.github.inspect(target_identifier)
+        elif target_source == "url":
+            upstream = self.url_source.inspect(target_identifier)
+        else:
+            upstream = None
+
+        if upstream:
+            upstream.source = self.source_id()
+            upstream.identifier = identifier
+            upstream.trust_level = self.trust_level_for(identifier)
+            merged_extra = dict(upstream.extra)
+            merged_extra.update(meta.extra)
+            merged_extra["resolved_source"] = target_source
+            merged_extra["resolved_identifier"] = target_identifier
+            upstream.extra = merged_extra
+            return upstream
+
+        meta.extra["resolved_source"] = target_source
+        meta.extra["resolved_identifier"] = target_identifier
+        return meta
+
+    def _entry_identifier(self, name: str) -> str:
+        return f"{self.source_id()}/{name}"
+
+    def _entry_for_identifier(self, identifier: str) -> Optional[Dict[str, Any]]:
+        if identifier.startswith(f"{self.source_id()}/"):
+            name = identifier.split("/", 1)[1]
+        else:
+            name = identifier
+
+        entries = self._fetch_entries()
+        if not entries:
+            return None
+        return self._entries_by_name.get(name)
+
+    def _entry_to_meta(self, entry: Dict[str, Any]) -> Optional[SkillMeta]:
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            return None
+
+        description = str(entry.get("description") or "").strip()
+        tags = entry.get("keywords")
+        if not isinstance(tags, list):
+            tags = []
+
+        return SkillMeta(
+            name=name,
+            description=description,
+            source=self.source_id(),
+            identifier=self._entry_identifier(name),
+            trust_level="community",
+            tags=[str(t) for t in tags if isinstance(t, (str, int, float))],
+            extra={
+                "domain": str(entry.get("domain") or ""),
+                "namespace": str(entry.get("namespace") or ""),
+                "version": str(entry.get("version") or ""),
+            },
+        )
+
+    def _request_json(self, path: str) -> Optional[Any]:
+        if not self.base_url:
+            return None
+
+        url = f"{self.base_url}{path}"
+        if not is_safe_url(url):
+            logger.warning("Blocked unsafe LiteLLM gateway URL: %s", url)
+            return None
+
+        blocked = check_website_access(url)
+        if blocked:
+            logger.info(
+                "Blocked LiteLLM gateway fetch for %s by rule %s",
+                blocked["host"],
+                blocked["rule"],
+            )
+            return None
+
+        headers: Dict[str, str] = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        try:
+            resp = httpx.get(url, headers=headers, timeout=20, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            logger.debug("LiteLLM gateway request failed for %s: %s", url, exc)
+            return None
+
+        if resp.status_code != 200:
+            return None
+        try:
+            return resp.json()
+        except json.JSONDecodeError:
+            return None
+
+    def _extract_entries(self, payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if not isinstance(payload, dict):
+            return []
+
+        for key in ("skills", "plugins", "items", "data", "results"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [p for p in value if isinstance(p, dict)]
+        return []
+
+    def _fetch_entries(self) -> List[Dict[str, Any]]:
+        if not self.base_url:
+            return []
+
+        payload = self._request_json("/public/skill_hub")
+        entries = self._extract_entries(payload)
+        if not entries:
+            payload = self._request_json("/claude-code/marketplace.json")
+            entries = self._extract_entries(payload)
+
+        self._entries_by_name = {}
+        for entry in entries:
+            name = str(entry.get("name") or "").strip()
+            if name:
+                self._entries_by_name[name] = entry
+        return entries
+
+    @staticmethod
+    def _github_identifier_from_source(url: str, path: str = "") -> Optional[str]:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        if parsed.netloc.lower() != "github.com":
+            return None
+
+        parts = [p for p in parsed.path.strip("/").split("/") if p]
+        if len(parts) < 2:
+            return None
+        owner = parts[0]
+        repo = parts[1]
+
+        repo_path = ""
+        if len(parts) >= 5 and parts[2] == "tree":
+            repo_path = "/".join(parts[4:])
+
+        extra_path = (path or "").strip().strip("/")
+        if repo_path and extra_path:
+            repo_path = f"{repo_path}/{extra_path}"
+        elif extra_path:
+            repo_path = extra_path
+
+        if repo_path:
+            return f"{owner}/{repo}/{repo_path}"
+        return f"{owner}/{repo}"
+
+    def _resolve_install_target(self, entry: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        source = entry.get("source")
+        if isinstance(source, str):
+            source = {"source": source, "url": entry.get("url"), "path": entry.get("path")}
+        if not isinstance(source, dict):
+            return None
+
+        source_type = str(source.get("source") or "").strip().lower()
+        source_url = str(source.get("url") or "").strip()
+        source_path = str(source.get("path") or "").strip()
+
+        if source_type in {"github", "git-subdir"}:
+            identifier = self._github_identifier_from_source(source_url, source_path)
+            if identifier:
+                return {"source": "github", "identifier": identifier}
+
+        if source_type == "url" and source_url:
+            return {"source": "url", "identifier": source_url}
+
+        return None
+
+    @staticmethod
+    def _strip_known_suffix(url: str) -> str:
+        """Normalize explicit gateway URLs that may already include endpoint paths."""
+        normalized = url.strip().rstrip("/")
+        for suffix in (
+            "/public/skill_hub",
+            "/claude-code/marketplace.json",
+            "/claude-code/plugins",
+        ):
+            if normalized.endswith(suffix):
+                return normalized[: -len(suffix)].rstrip("/")
+        return normalized
+
+    @staticmethod
+    def _ensure_litellm_prefix(base: str) -> str:
+        normalized = base.strip().rstrip("/")
+        if not normalized:
+            return ""
+        parsed = urlparse(normalized)
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        path = parsed.path.rstrip("/")
+        if path.endswith("/litellm"):
+            return normalized
+        new_path = f"{path}/litellm" if path else "/litellm"
+        return urlunparse((parsed.scheme, parsed.netloc, new_path, "", "", ""))
+
+    def _derive_gateway_base_url(self) -> str:
+        """Resolve gateway base so search hits BASE_URL/litellm/public/skill_hub.
+
+        Priority:
+        1) LITELLM_SKILLS_GATEWAY_URL (explicit override)
+        2) BASE_URL / HERMES_BASE_URL / LITELLM_BASE_URL / LITELLM_LLM_URL
+        """
+        explicit = (os.getenv("LITELLM_SKILLS_GATEWAY_URL") or "").strip()
+        if explicit:
+            return self._strip_known_suffix(explicit)
+
+        base = (
+            os.getenv("BASE_URL")
+            or os.getenv("HERMES_BASE_URL")
+            or os.getenv("LITELLM_BASE_URL")
+            or os.getenv("LITELLM_LLM_URL")
+            or ""
+        ).strip()
+        if not base:
+            return ""
+
+        parsed = urlparse(base)
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+
+        # Common LiteLLM API forms end with /litellm/v1 or /v1; trim API suffix
+        # then enforce /litellm hub root.
+        path = parsed.path.rstrip("/")
+        if path.endswith("/v1"):
+            path = path[: -len("/v1")]
+            base = urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+        return self._ensure_litellm_prefix(base)
+
+
+# ---------------------------------------------------------------------------
 # Official optional skills source adapter
 # ---------------------------------------------------------------------------
 
@@ -3739,6 +4087,7 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
     sources: List[SkillSource] = [
         OptionalSkillSource(),        # Official optional skills (highest priority)
         HermesIndexSource(auth=auth), # Centralized index (search + resolved install paths)
+        LiteLLMSGatewaySource(auth=auth),
         SkillsShSource(auth=auth),
         WellKnownSkillSource(),
         UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file

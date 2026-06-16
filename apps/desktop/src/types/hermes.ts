@@ -515,6 +515,43 @@ export interface ToolsetInfo {
   tools: string[]
 }
 
+export interface SkillHubResult {
+  description: string
+  identifier: string
+  name: string
+  repo: null | string
+  source: string
+  tags: string[]
+  trust_level: string
+}
+
+export interface SkillHubInstalledEntry {
+  name: null | string
+  scan_verdict: null | string
+  trust_level: null | string
+}
+
+export interface SkillHubSearchResponse {
+  installed: Record<string, SkillHubInstalledEntry>
+  results: SkillHubResult[]
+  source_counts: Record<string, number>
+  timed_out: string[]
+}
+
+export interface SkillHubSource {
+  available?: boolean
+  id: string
+  label: string
+  rate_limited?: boolean
+}
+
+export interface SkillHubSourcesResponse {
+  featured: SkillHubResult[]
+  index_available: boolean
+  installed: Record<string, SkillHubInstalledEntry>
+  sources: SkillHubSource[]
+}
+
 export interface ToolEnvVar {
   key: string
   prompt: string

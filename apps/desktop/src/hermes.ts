@@ -36,6 +36,8 @@ import type {
   SessionInfo,
   SessionMessagesResponse,
   SessionSearchResponse,
+  SkillHubSearchResponse,
+  SkillHubSourcesResponse,
   SkillInfo,
   StatusResponse,
   ToolsetConfig,
@@ -97,6 +99,11 @@ export type {
   SessionRuntimeInfo,
   SessionSearchResponse,
   SessionSearchResult,
+  SkillHubInstalledEntry,
+  SkillHubResult,
+  SkillHubSearchResponse,
+  SkillHubSource,
+  SkillHubSourcesResponse,
   SkillInfo,
   StaleAuxAssignment,
   StatusResponse,
@@ -424,6 +431,34 @@ export function toggleSkill(name: string, enabled: boolean): Promise<{ ok: boole
     path: '/api/skills/toggle',
     method: 'PUT',
     body: { name, enabled }
+  })
+}
+
+export function getSkillHubSources(): Promise<SkillHubSourcesResponse> {
+  return window.hermesDesktop.api<SkillHubSourcesResponse>({
+    ...profileScoped(),
+    path: '/api/skills/hub/sources'
+  })
+}
+
+export function searchSkillsHub(q: string, source = 'all', limit = 20): Promise<SkillHubSearchResponse> {
+  const query = new URLSearchParams({
+    q,
+    source,
+    limit: String(limit)
+  })
+  return window.hermesDesktop.api<SkillHubSearchResponse>({
+    ...profileScoped(),
+    path: `/api/skills/hub/search?${query.toString()}`
+  })
+}
+
+export function installSkillFromHub(identifier: string): Promise<ActionResponse> {
+  return window.hermesDesktop.api<ActionResponse>({
+    ...profileScoped(),
+    path: '/api/skills/hub/install',
+    method: 'POST',
+    body: { identifier }
   })
 }
 

@@ -7,11 +7,17 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
-import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
+import { getSkillHubSources, getSkills, getToolsets, installSkillFromHub, searchSkillsHub, toggleSkill, toggleToolset } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-import type { SkillInfo, ToolsetInfo } from '@/types/hermes'
+import type {
+  SkillHubInstalledEntry,
+  SkillHubResult,
+  SkillHubSource,
+  SkillInfo,
+  ToolsetInfo
+} from '@/types/hermes'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -21,7 +27,7 @@ import { asText, includesQuery, prettyName, toolNames, toolsetDisplayLabel } fro
 import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
-const SKILLS_MODES = ['skills', 'toolsets'] as const
+const SKILLS_MODES = ['skills', 'toolsets', 'hub'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 
 function categoryFor(skill: SkillInfo): string {
@@ -84,6 +90,12 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
   const [savingToolset, setSavingToolset] = useState<string | null>(null)
   const [expandedToolset, setExpandedToolset] = useState<string | null>(null)
+  const [hubSources, setHubSources] = useState<SkillHubSource[]>([])
+  const [hubFeatured, setHubFeatured] = useState<SkillHubResult[]>([])
+  const [hubResults, setHubResults] = useState<SkillHubResult[]>([])
+  const [hubInstalled, setHubInstalled] = useState<Record<string, SkillHubInstalledEntry>>({})
+  const [hubLoading, setHubLoading] = useState(false)
+  const [installingHub, setInstallingHub] = useState<string | null>(null)
 
   const refreshCapabilities = useCallback(async () => {
     setRefreshing(true)
@@ -105,11 +117,74 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       .catch(err => notifyError(err, t.skills.toolsetsRefreshFailed))
   }, [t])
 
+  const refreshHubLanding = useCallback(async () => {
+    setHubLoading(true)
+    try {
+      const landing = await getSkillHubSources()
+      setHubSources(landing.sources || [])
+      setHubFeatured(landing.featured || [])
+      setHubInstalled(landing.installed || {})
+    } catch (err) {
+      notifyError(err, 'Failed to load Skills Hub sources')
+    } finally {
+      setHubLoading(false)
+    }
+  }, [])
+
   useRefreshHotkey(refreshCapabilities)
 
   useEffect(() => {
     void refreshCapabilities()
   }, [refreshCapabilities])
+
+  useEffect(() => {
+    if (mode !== 'hub') {
+      return
+    }
+    void refreshHubLanding()
+  }, [mode, refreshHubLanding])
+
+  useEffect(() => {
+    if (mode !== 'hub') {
+      return
+    }
+
+    const q = query.trim()
+    if (!q) {
+      setHubResults([])
+      return
+    }
+
+    let cancelled = false
+    const timer = setTimeout(() => {
+      setHubLoading(true)
+      searchSkillsHub(q, 'all', 30)
+        .then(result => {
+          if (cancelled) {
+            return
+          }
+          setHubResults(result.results || [])
+          if (result.installed) {
+            setHubInstalled(current => ({ ...current, ...result.installed }))
+          }
+        })
+        .catch(err => {
+          if (!cancelled) {
+            notifyError(err, 'Skills Hub search failed')
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setHubLoading(false)
+          }
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [mode, query])
 
   const categories = useMemo(() => {
     if (!skills) {
@@ -134,6 +209,13 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   )
 
   const visibleToolsets = useMemo(() => (toolsets ? filteredToolsets(toolsets, query) : []), [query, toolsets])
+
+  const visibleHubResults = useMemo(() => {
+    if (query.trim()) {
+      return hubResults
+    }
+    return hubFeatured
+  }, [hubFeatured, hubResults, query])
 
   const skillGroups = useMemo(() => {
     const groups = new Map<string, SkillInfo[]>()
@@ -188,6 +270,30 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     }
   }
 
+  async function handleInstallHubSkill(result: SkillHubResult) {
+    setInstallingHub(result.identifier)
+    try {
+      await installSkillFromHub(result.identifier)
+      setHubInstalled(current => ({
+        ...current,
+        [result.identifier]: {
+          name: result.name,
+          scan_verdict: null,
+          trust_level: result.trust_level
+        }
+      }))
+      notify({
+        kind: 'success',
+        title: 'Installing skill',
+        message: `${result.name} queued for install`
+      })
+    } catch (err) {
+      notifyError(err, `Failed to install ${result.name}`)
+    } finally {
+      setInstallingHub(null)
+    }
+  }
+
   return (
     <PageSearchShell
       {...props}
@@ -210,20 +316,20 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
         ) : undefined
       }
       onSearchChange={setQuery}
-      searchHidden={mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0}
-      searchPlaceholder={mode === 'skills' ? t.skills.searchSkills : t.skills.searchToolsets}
+      searchHidden={mode === 'skills' ? (skills?.length ?? 0) === 0 : mode === 'toolsets' ? (toolsets?.length ?? 0) === 0 : false}
+      searchPlaceholder={mode === 'skills' ? t.skills.searchSkills : mode === 'toolsets' ? t.skills.searchToolsets : 'Search hub skills...'}
       searchTrailingAction={
         <Button
           aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
           className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
-          disabled={refreshing}
-          onClick={() => void refreshCapabilities()}
+          disabled={refreshing || hubLoading}
+          onClick={() => void (mode === 'hub' ? refreshHubLanding() : refreshCapabilities())}
           size="icon-xs"
-          title={refreshing ? t.skills.refreshing : t.skills.refresh}
+          title={refreshing || hubLoading ? t.skills.refreshing : t.skills.refresh}
           type="button"
           variant="ghost"
         >
-          <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
+          <Codicon name="refresh" size="0.875rem" spinning={refreshing || hubLoading} />
         </Button>
       }
       searchValue={query}
@@ -234,6 +340,9 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           </TextTab>
           <TextTab active={mode === 'toolsets'} onClick={() => setMode('toolsets')}>
             {t.skills.tabToolsets}
+          </TextTab>
+          <TextTab active={mode === 'hub'} onClick={() => setMode('hub')}>
+            Hub
           </TextTab>
         </>
       }
@@ -275,6 +384,59 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      ) : mode === 'hub' ? (
+        <div className={cn('h-full overflow-y-auto py-3', PAGE_INSET_X)}>
+          {hubLoading && visibleHubResults.length === 0 ? (
+            <PageLoader label='Loading Skills Hub...' />
+          ) : (
+            <div className='space-y-3'>
+              {hubSources.length > 0 && (
+                <div className='flex flex-wrap gap-1'>
+                  {hubSources.map(source => (
+                    <StatusPill active key={source.id}>
+                      {source.label}
+                    </StatusPill>
+                  ))}
+                </div>
+              )}
+
+              {visibleHubResults.length === 0 ? (
+                <EmptyState
+                  description='Search the hub to discover installable skills from LiteLLM and other sources.'
+                  title='No hub skills to show'
+                />
+              ) : (
+                <div>
+                  {visibleHubResults.map(result => {
+                    const alreadyInstalled = Boolean(hubInstalled[result.identifier])
+                    const installing = installingHub === result.identifier
+                    return (
+                      <div className='grid gap-3 px-0 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center' key={result.identifier}>
+                        <div className='min-w-0'>
+                          <div className='truncate text-sm font-medium'>{result.name}</div>
+                          <p className='mt-0.5 text-xs text-muted-foreground'>
+                            {result.description || t.skills.noDescription}
+                          </p>
+                          <div className='mt-1 text-[11px] text-(--ui-text-tertiary)'>
+                            {result.source} • {result.trust_level}
+                          </div>
+                        </div>
+                        <Button
+                          disabled={alreadyInstalled || installing}
+                          onClick={() => void handleInstallHubSkill(result)}
+                          size='sm'
+                          variant={alreadyInstalled ? 'secondary' : 'default'}
+                        >
+                          {alreadyInstalled ? 'Installed' : installing ? 'Installing...' : 'Install'}
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
