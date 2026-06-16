@@ -86,10 +86,14 @@ jobs:
             .replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
           fs.writeFileSync(cargoPath, cargo);
 
-          const winVersion = `${version}.0`;
-          const manifest = fs.readFileSync(manifestPath, 'utf8')
-            .replace(/version="[0-9A-Za-z.+-]+"/m, `version="${winVersion}"`);
-          fs.writeFileSync(manifestPath, manifest);
+          // NOTE: the manifest no longer contains a root <assemblyIdentity>
+          // so there is no version field to update. Skipping manifest
+          // version replacement avoids the regex accidentally matching
+          // the <?xml version="1.0"?> declaration and corrupting it.
+          // (Previously: .replace(/version="[0-9A-Za-z.+-]+"/m, ...) was
+          // hitting the XML declaration's own version="1.0" attribute,
+          // replacing it with e.g. version="0.0.8.0" — invalid XML that
+          // made Windows SxS refuse to load the activation context.)
 
           console.log(`Applied installer version ${version}`);
           NODE
