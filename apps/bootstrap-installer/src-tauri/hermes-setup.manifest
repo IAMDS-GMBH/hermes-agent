@@ -58,18 +58,16 @@
         </windowsSettings>
     </application>
 
-    <!-- Use the modern common controls (v6 themes). Without this, our
-         file picker / shell dialogs fall back to 1990s-era visuals. -->
-    <dependency>
-        <dependentAssembly>
-            <assemblyIdentity
-                type="win32"
-                name="Microsoft.Windows.Common-Controls"
-                version="6.0.0.0"
-                processorArchitecture="*"
-                publicKeyToken="6595b64144ccf1df"
-                language="*"
-            />
-        </dependentAssembly>
-    </dependency>
+    <!--
+        Note: we intentionally omit a dependentAssembly reference to
+        Microsoft.Windows.Common-Controls v6. This is a Tauri/WebView2
+        app — all UI is rendered through Chromium, not the legacy Win32
+        common controls. Including the v6 common-controls assembly
+        dependency causes Windows's SxS activation-context loader to
+        fail on some configurations (event ID 59, error 14001 "the
+        side-by-side configuration is incorrect"), because the loader
+        cannot always resolve the wildcard processorArchitecture="*"
+        entry against the WinSxS store on those systems. Tauri 2.x's
+        own default manifest omits this dependency for the same reason.
+    -->
 </assembly>
