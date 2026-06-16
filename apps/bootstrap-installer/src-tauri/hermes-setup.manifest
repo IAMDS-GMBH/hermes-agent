@@ -14,16 +14,21 @@
     user-account-control/how-user-account-control-works#installer-detection)
     and CreateProcess fails with ERROR_ELEVATION_REQUIRED (740) when the
     user double-clicks. asInvoker disables that.
+
+    Intentionally omitted:
+    - Root <assemblyIdentity>: not present in Tauri's default or example
+      manifests; including it with processorArchitecture="*" triggers an
+      SxS activation-context failure (error 14001) on some Windows builds
+      because the loader cannot bind a wildcard-architecture identity for
+      a process-local manifest.
+    - <application>/<windowsSettings> (dpiAwareness, activeCodePage):
+      Tauri / WebView2 handle DPI awareness programmatically; including
+      PerMonitorV2 via the 2016-era SMI namespace can also trigger the
+      SxS failure on certain Windows 10 builds.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-    <assemblyIdentity
-        version="0.0.4.0"
-        processorArchitecture="*"
-        name="NousResearch.Hermes.Setup"
-        type="win32"
-    />
-    <description>Hermes Setup</description>
 
+    <!-- Prevent UAC auto-elevation triggered by the "Setup" name heuristic. -->
     <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
         <security>
             <requestedPrivileges>
@@ -44,30 +49,22 @@
             <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
             <!-- Windows 7 -->
             <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
-            <!-- Windows Vista -->
-            <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
         </application>
     </compatibility>
 
-    <!-- Per-monitor v2 DPI awareness so the installer doesn't go blurry
-         on high-DPI displays when dragged between monitors. -->
-    <application xmlns="urn:schemas-microsoft-com:asm.v3">
-        <windowsSettings>
-            <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
-            <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
-        </windowsSettings>
-    </application>
+    <!-- Required by tauri_plugin_dialog for themed native file/message
+         dialogs (Common Controls v6). Matches Tauri's own default manifest. -->
+    <dependency>
+        <dependentAssembly>
+            <assemblyIdentity
+                type="win32"
+                name="Microsoft.Windows.Common-Controls"
+                version="6.0.0.0"
+                processorArchitecture="*"
+                publicKeyToken="6595b64144ccf1df"
+                language="*"
+            />
+        </dependentAssembly>
+    </dependency>
 
-    <!--
-        Note: we intentionally omit a dependentAssembly reference to
-        Microsoft.Windows.Common-Controls v6. This is a Tauri/WebView2
-        app — all UI is rendered through Chromium, not the legacy Win32
-        common controls. Including the v6 common-controls assembly
-        dependency causes Windows's SxS activation-context loader to
-        fail on some configurations (event ID 59, error 14001 "the
-        side-by-side configuration is incorrect"), because the loader
-        cannot always resolve the wildcard processorArchitecture="*"
-        entry against the WinSxS store on those systems. Tauri 2.x's
-        own default manifest omits this dependency for the same reason.
-    -->
 </assembly>
