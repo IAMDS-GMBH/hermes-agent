@@ -8,6 +8,7 @@ export interface CredentialsData {
   apiKey: string
   baseUrl: string
   modelName: string
+  modelNames?: string[]
   emailAddress?: string
   emailPassword?: string
   imapServer?: string
@@ -86,6 +87,7 @@ export default function Credentials() {
       apiKey: formData.apiKey.trim(),
       baseUrl: formData.baseUrl.trim(),
       modelName: formData.modelName.trim(),
+      modelNames: [...availableModels],
       emailAddress: showEmailSection ? formData.emailAddress?.trim() || undefined : undefined,
       emailPassword: showEmailSection ? formData.emailPassword?.trim() || undefined : undefined,
       imapServer: showEmailSection ? formData.imapServer?.trim() || undefined : undefined,

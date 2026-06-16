@@ -1705,16 +1705,28 @@ MCP_EOF
         log_success "Updated config.yaml with bootstrap credentials"
     fi
 
-    # Patch hermes-agent: pin openai-api to $SELECTED_MODEL, suppress copilot
+    # Patch hermes-agent: pin openai-api to fetched model list, suppress copilot
     if [ -n "${HERMES_BOOTSTRAP_MODEL:-}" ]; then
-        HERMES_AGENT_DIR="$HERMES_HOME/hermes-agent"
+        HERMES_AGENT_DIR="$INSTALL_DIR"
         MODELS_PY="$HERMES_AGENT_DIR/hermes_cli/models.py"
         SWITCH_PY="$HERMES_AGENT_DIR/hermes_cli/model_switch.py"
+        PYTHON_CMD="python3"
+        if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+            PYTHON_CMD="$INSTALL_DIR/venv/bin/python"
+        fi
 
         if [ -f "$MODELS_PY" ]; then
-            python3 - "$MODELS_PY" "${HERMES_BOOTSTRAP_MODEL}" <<'PYEOF'
-import sys, re
+            "$PYTHON_CMD" - "$MODELS_PY" "${HERMES_BOOTSTRAP_MODEL}" "${HERMES_BOOTSTRAP_MODELS_JSON:-[]}" <<'PYEOF'
+import json, re, sys
 path, model = sys.argv[1], sys.argv[2]
+models_json = sys.argv[3] if len(sys.argv) > 3 else "[]"
+try:
+    models = [m for m in json.loads(models_json) if isinstance(m, str) and m.strip()]
+except Exception:
+    models = []
+if not models:
+    models = [model]
+models_literal = repr(models)
 src = open(path, encoding="utf-8").read()
 
 # Patch cached_provider_model_ids: insert short-circuit after 'if not normalized'
@@ -1724,9 +1736,9 @@ if "# Custom: pin openai-api" not in src:
         'normalized = normalize_provider(provider) or (provider or "")\n'
         '    if not normalized:\n'
         '        return []\n\n'
-        '    # Custom: pin openai-api to single model; suppress copilot entirely.\n'
+        '    # Custom: pin openai-api to fetched models; suppress copilot entirely.\n'
         f'    if normalized in ("openai", "openai-api"):\n'
-        f'        return ["{model}"]\n'
+        f'        return {models_literal}\n'
         '    if normalized == "copilot":\n'
         '        return []'
     )
@@ -1751,7 +1763,7 @@ new_save = (
     '        from utils import atomic_json_write\n\n'
     '        # Custom: never persist copilot; always pin openai-api.\n'
     '        filtered = {k: v for k, v in data.items() if k != "copilot"}\n'
-    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": ["{model}"]}}\n\n'
+    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": {models_literal}}}\n\n'
     '        path = _provider_models_cache_path()\n'
     '        path.parent.mkdir(parents=True, exist_ok=True)\n'
     '        atomic_json_write(path, filtered, indent=None)\n'
@@ -1776,7 +1788,7 @@ PYEOF
         fi
 
         if [ -f "$SWITCH_PY" ]; then
-            python3 - "$SWITCH_PY" <<'PYEOF'
+            "$PYTHON_CMD" - "$SWITCH_PY" <<'PYEOF'
 import sys
 path = sys.argv[1]
 src = open(path, encoding="utf-8").read()

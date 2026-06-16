@@ -65,7 +65,14 @@ pub async fn run_script(
         cmd.env("HERMES_BOOTSTRAP_API_KEY", &creds.api_key);
         cmd.env("HERMES_BOOTSTRAP_BASE_URL", &creds.base_url);
         cmd.env("HERMES_BOOTSTRAP_MODEL", &creds.model_name);
-        
+        if let Some(model_names) = &creds.model_names {
+            if !model_names.is_empty() {
+                if let Ok(models_json) = serde_json::to_string(model_names) {
+                    cmd.env("HERMES_BOOTSTRAP_MODELS_JSON", models_json);
+                }
+            }
+        }
+
         if let Some(url) = &creds.memory_api_url {
             cmd.env("HERMES_BOOTSTRAP_MEMORY_API_URL", url);
         }

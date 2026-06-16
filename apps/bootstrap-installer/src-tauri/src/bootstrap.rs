@@ -35,6 +35,7 @@ pub struct CredentialsData {
     pub api_key: String,
     pub base_url: String,
     pub model_name: String,
+    pub model_names: Option<Vec<String>>,
     pub memory_api_url: Option<String>,
     pub email_address: Option<String>,
     pub email_password: Option<String>,

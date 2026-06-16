@@ -1854,16 +1854,29 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
         Write-Success "Configured $envPath with API key and email secrets"
     }
 
-    # Patch hermes-agent: pin openai-api to $HERMES_BOOTSTRAP_MODEL, suppress copilot
+    # Patch hermes-agent: pin openai-api to fetched model list, suppress copilot
     if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
-        $modelsPy = "$HermesHome\hermes-agent\hermes_cli\models.py"
-        $switchPy = "$HermesHome\hermes-agent\hermes_cli\model_switch.py"
+        $modelsPy = "$InstallDir\hermes_cli\models.py"
+        $switchPy = "$InstallDir\hermes_cli\model_switch.py"
+        $pythonCmd = "python"
+        $venvPython = "$InstallDir\venv\Scripts\python.exe"
+        if (Test-Path $venvPython) {
+            $pythonCmd = $venvPython
+        }
 
         # Patch models.py
         if (Test-Path $modelsPy) {
             $pythonScript = @"
-import sys, re
+import json, re, sys
 path, model = sys.argv[1], sys.argv[2]
+models_json = sys.argv[3] if len(sys.argv) > 3 else "[]"
+try:
+    models = [m for m in json.loads(models_json) if isinstance(m, str) and m.strip()]
+except Exception:
+    models = []
+if not models:
+    models = [model]
+models_literal = repr(models)
 src = open(path, encoding="utf-8").read()
 
 # Patch cached_provider_model_ids: insert short-circuit after 'if not normalized'
@@ -1873,9 +1886,9 @@ if "# Custom: pin openai-api" not in src:
         'normalized = normalize_provider(provider) or (provider or "")\n'
         '    if not normalized:\n'
         '        return []\n\n'
-        '    # Custom: pin openai-api to single model; suppress copilot entirely.\n'
+        '    # Custom: pin openai-api to fetched models; suppress copilot entirely.\n'
         f'    if normalized in ("openai", "openai-api"):\n'
-        f'        return ["{model}"]\n'
+        f'        return {models_literal}\n'
         '    if normalized == "copilot":\n'
         '        return []'
     )
@@ -1900,7 +1913,7 @@ new_save = (
     '        from utils import atomic_json_write\n\n'
     '        # Custom: never persist copilot; always pin openai-api.\n'
     '        filtered = {k: v for k, v in data.items() if k != "copilot"}\n'
-    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": ["{model}"]}}\n\n'
+    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": {models_literal}}}\n\n'
     '        path = _provider_models_cache_path()\n'
     '        path.parent.mkdir(parents=True, exist_ok=True)\n'
     '        atomic_json_write(path, filtered, indent=None)\n'
@@ -1921,9 +1934,8 @@ src = re.sub(
 open(path, "w", encoding="utf-8").write(src)
 print("models.py patched")
 "@
-            $modelsPyEscaped = $modelsPy -replace '"', '""'
-            $modelEscaped = $env:HERMES_BOOTSTRAP_MODEL -replace '"', '""'
-            & python.exe -c $pythonScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL
+            $modelsJson = if ([string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODELS_JSON)) { "[]" } else { $env:HERMES_BOOTSTRAP_MODELS_JSON }
+            & $pythonCmd -c $pythonScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL $modelsJson
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Patched models.py to pin openai-api and suppress copilot"
             }
@@ -1968,7 +1980,7 @@ if '# Custom: suppress copilot' not in src:
 open(path, "w", encoding="utf-8").write(src)
 print("model_switch.py patched")
 "@
-            & python.exe -c $pythonScript $switchPy
+            & $pythonCmd -c $pythonScript $switchPy
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Patched model_switch.py to suppress copilot from picker"
             }
