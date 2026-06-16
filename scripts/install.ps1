@@ -1786,7 +1786,7 @@ function Apply-BootstrapCredentials {
         
         # Replace model.default
         if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
-            $config = $config -replace '^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
+            $config = $config -replace '(?m)^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
         }
 
         # Replace model.base_url from base URL root
@@ -1801,9 +1801,9 @@ function Apply-BootstrapCredentials {
             $llmGatewayUrl = "$baseRoot/litellm/v1"
             $mcpServerUrl = "$baseRoot/litellm/mcp"
 
-            $config = $config -replace '^\s+provider:.*$', '  provider: openai-api'
+            $config = $config -replace '(?m)^\s+provider:.*$', '  provider: openai-api'
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
-            $config = $config -replace '^\s+base_url:.*$', "  base_url: $escapedUrl"
+            $config = $config -replace '(?m)^\s+base_url:.*$', "  base_url: $escapedUrl"
 
             if ($config -notmatch 'mcp_servers:') {
                 $mcpBlock = @"
@@ -1957,7 +1957,7 @@ function Copy-ConfigTemplates {
     if (Test-Path $configPath) {
         $escapedCwd = $hermesWorkDir -replace '([\\])', '$1$1'
         $config = Get-Content $configPath -Raw
-        $config = $config -replace '^\s+cwd:.*$', "  cwd: $escapedCwd"
+        $config = $config -replace '(?m)^\s+cwd:.*$', "  cwd: $escapedCwd"
         $utf8NoBomCfg = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBomCfg)
     }
