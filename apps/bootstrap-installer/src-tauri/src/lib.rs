@@ -14,6 +14,7 @@ mod install_script;
 mod powershell;
 mod paths;
 mod update;
+mod models;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -180,6 +181,8 @@ pub fn run() {
             paths::get_log_path,
             paths::get_hermes_home,
             paths::open_log_dir,
+            // Model discovery
+            models::fetch_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hermes Setup");

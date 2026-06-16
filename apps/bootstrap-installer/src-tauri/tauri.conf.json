@@ -63,6 +63,12 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "http": {
+      "scope": [
+        "http://*",
+        "https://*"
+      ]
     }
   }
 }

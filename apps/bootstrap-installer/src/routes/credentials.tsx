@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Button } from '../components/button'
 import { startInstall } from '../store'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Loader, Check } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
 
 export interface CredentialsData {
   apiKey: string
@@ -17,7 +18,7 @@ export default function Credentials() {
   const [formData, setFormData] = useState<CredentialsData>({
     apiKey: '',
     baseUrl: '',
-    modelName: 'claude-sonnet-4-6',
+    modelName: '',
     emailAddress: '',
     emailPassword: '',
     imapServer: '',
@@ -26,6 +27,10 @@ export default function Credentials() {
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showEmailSection, setShowEmailSection] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [modelsFetched, setModelsFetched] = useState(false)
+  const [modelError, setModelError] = useState<string | null>(null)
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -71,6 +76,10 @@ export default function Credentials() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validateForm()) return
+    if (!modelsFetched) {
+      setErrors({ ...errors, modelName: 'Please fetch and select a model first' })
+      return
+    }
 
     // Clean up optional empty fields
     const cleaned: CredentialsData = {
@@ -94,6 +103,41 @@ export default function Credentials() {
         delete next[field]
         return next
       })
+    }
+  }
+
+  const handleFetchModels = async () => {
+    setModelError(null)
+    setIsLoadingModels(true)
+
+    try {
+      if (!formData.baseUrl.trim()) {
+        setModelError('Base URL is required')
+        setIsLoadingModels(false)
+        return
+      }
+      if (!formData.apiKey.trim()) {
+        setModelError('API Key is required')
+        setIsLoadingModels(false)
+        return
+      }
+
+      const models = await invoke<string[]>('fetch_models', {
+        baseUrl: formData.baseUrl,
+        apiKey: formData.apiKey
+      })
+      
+      setAvailableModels(models)
+      setModelsFetched(true)
+      setFormData((prev) => ({ ...prev, modelName: models[0] }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('Model fetch error:', message, error)
+      setModelError(message)
+      setAvailableModels([])
+      setModelsFetched(false)
+    } finally {
+      setIsLoadingModels(false)
     }
   }
 
@@ -165,14 +209,59 @@ export default function Credentials() {
                 <label htmlFor="modelName" className="block text-sm font-medium text-foreground">
                   Model Name <span className="text-red-500">*</span>
                 </label>
-                <input
-                  id="modelName"
-                  type="text"
-                  value={formData.modelName}
-                  onChange={(e) => handleChange('modelName', e.target.value)}
-                  placeholder="gpt-4o"
-                  className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
+                {modelsFetched ? (
+                  // Dropdown when models are fetched
+                  <select
+                    id="modelName"
+                    value={formData.modelName}
+                    onChange={(e) => handleChange('modelName', e.target.value)}
+                    className="mt-1 w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    {availableModels.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  // Disabled input when models not yet fetched
+                  <input
+                    id="modelName"
+                    type="text"
+                    value=""
+                    placeholder="Click 'Fetch Models' first"
+                    disabled
+                    className="mt-1 w-full rounded border border-input bg-muted px-3 py-2 text-sm text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                )}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleFetchModels}
+                    disabled={isLoadingModels || !formData.baseUrl.trim() || !formData.apiKey.trim()}
+                    className="flex items-center gap-2 rounded border border-input bg-muted/50 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isLoadingModels ? (
+                      <>
+                        <Loader className="h-3 w-3 animate-spin" />
+                        Fetching...
+                      </>
+                    ) : modelsFetched ? (
+                      <>
+                        <Check className="h-3 w-3 text-green-500" />
+                        Fetched ({availableModels.length} models)
+                      </>
+                    ) : (
+                      'Fetch Models'
+                    )}
+                  </button>
+                </div>
+                {modelError && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
+                    <AlertCircle className="h-3 w-3" />
+                    {modelError}
+                  </p>
+                )}
                 {errors.modelName && (
                   <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
                     <AlertCircle className="h-3 w-3" />
@@ -306,9 +395,10 @@ export default function Credentials() {
               type="submit"
               size="lg"
               className="min-w-32"
-            >
-              Install Hermes
-            </Button>
+             disabled={!modelsFetched}
+           >
+             Install Hermes
+           </Button>
           </div>
         </form>
       </div>
