@@ -89,10 +89,9 @@ pub async fn write_provider_models_cache(
     let hermes_home_path = if let Some(home) = hermes_home {
         PathBuf::from(home)
     } else {
-        // Use default: ~/.hermes
-        let home = dirs::home_dir()
-            .ok_or("Could not determine home directory")?;
-        home.join(".hermes")
+        // Use the platform-correct default: %LOCALAPPDATA%\hermes on Windows,
+        // ~/.hermes on macOS/Linux — mirrors paths::hermes_home() exactly.
+        crate::paths::hermes_home()
     };
 
     let cache_file = hermes_home_path.join("provider_models_cache.json");

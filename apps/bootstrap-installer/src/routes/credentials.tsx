@@ -136,7 +136,7 @@ export default function Credentials() {
       // Write provider models cache for later use during install
       try {
         await invoke('write_provider_models_cache', {
-          hermes_home: null, // Use default ~/.hermes
+          hermes_home: null, // Use platform default (LOCALAPPDATA\hermes on Windows, ~/.hermes elsewhere)
           model_names: models
         })
       } catch (cacheError) {
