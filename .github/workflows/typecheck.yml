@@ -2,10 +2,8 @@
 name: Typecheck
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  release:
+    types: [published]
 
 jobs:
   typecheck:
