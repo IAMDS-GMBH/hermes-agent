@@ -129,58 +129,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Validate Apple signing/notarization secrets (macOS release)
-        if: runner.os == 'macOS' && github.event_name == 'release'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          missing=()
-          for key in \
-            APPLE_CERTIFICATE \
-            APPLE_CERTIFICATE_PASSWORD \
-            APPLE_SIGNING_IDENTITY \
-            APPLE_ID \
-            APPLE_PASSWORD \
-            APPLE_TEAM_ID; do
-            if [ -z "${!key:-}" ]; then
-              missing+=("$key")
-            fi
-          done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing required Apple signing/notarization secrets: ${missing[*]}"
-            echo "::error::Unsigned macOS artifacts are blocked by Gatekeeper as 'damaged'."
-            exit 1
-          fi
-
-      - name: Validate Apple certificate payload (macOS release)
-        if: runner.os == 'macOS' && github.event_name == 'release'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cert_p12_file="$RUNNER_TEMP/apple-cert.p12"
-          # APPLE_CERTIFICATE must be base64 of a .p12 blob.
-          if ! python3 -c 'import base64,os,pathlib; out=pathlib.Path(os.environ["RUNNER_TEMP"]) / "apple-cert.p12"; out.write_bytes(base64.b64decode(os.environ["APPLE_CERTIFICATE"], validate=True))'; then
-            echo "::error::APPLE_CERTIFICATE is not valid base64. It must be base64-encoded .p12 data."
-            exit 1
-          fi
-
-          # Validate the decoded blob is a readable PKCS#12 with provided password.
-          if ! openssl pkcs12 -in "$cert_p12_file" -nokeys -passin "pass:$APPLE_CERTIFICATE_PASSWORD" -info >/dev/null 2>&1; then
-            echo "::error::APPLE_CERTIFICATE/APPLE_CERTIFICATE_PASSWORD do not form a valid PKCS#12 certificate."
-            echo "::error::Re-export the Developer ID Application cert as .p12 and store its base64 in APPLE_CERTIFICATE."
-            exit 1
-          fi
-
       - name: Cache Rust targets
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -193,15 +141,6 @@ jobs:
           # Immutable pin for bundled installer scripts.
           HERMES_BUILD_PIN_COMMIT: ${{ github.sha }}
           HERMES_BUILD_PIN_BRANCH: ${{ github.ref_name }}
-          # Tauri/bundler macOS signing + notarization inputs. On non-macOS they
-          # are ignored. On macOS release jobs, the preflight step above enforces
-          # these are present so we don't publish Gatekeeper-blocked artifacts.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Collect macOS artifacts
         if: runner.os == 'macOS'
