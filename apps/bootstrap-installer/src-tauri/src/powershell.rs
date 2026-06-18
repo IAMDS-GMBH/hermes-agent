@@ -111,7 +111,15 @@ pub async fn run_script(
     let stderr = child.stderr.take().expect("stderr was piped");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
+    // Use raw byte reading for stderr: PowerShell on non-English Windows emits error
+    // messages in the system ANSI code page (e.g. Windows-1252 on German systems),
+    // which is not valid UTF-8. Reading as bytes and converting with from_utf8_lossy
+    // preserves the error text (replacing invalid sequences with '?') rather than
+    // silently dropping lines that fail UTF-8 decoding.
+    let mut stderr_reader = BufReader::new(stderr);
+    // Accumulator for the current stderr line across select! iterations; cleared after
+    // each complete line is emitted (i.e. after read_until finds '\n').
+    let mut stderr_line_buf: Vec<u8> = Vec::new();
 
     let mut combined_stdout = String::new();
     let mut combined_stderr = String::new();
@@ -137,18 +145,29 @@ pub async fn run_script(
                     }
                 }
             }
-            line = stderr_reader.next_line() => {
-                match line {
-                    Ok(Some(l)) => {
+            result = stderr_reader.read_until(b'\n', &mut stderr_line_buf) => {
+                match result {
+                    Ok(0) => {
+                        // stderr EOF — keep draining stdout.
+                    }
+                    Ok(_) => {
+                        // Strip trailing \r\n or \n before converting to string.
+                        if stderr_line_buf.ends_with(b"\r\n") {
+                            let new_len = stderr_line_buf.len() - 2;
+                            stderr_line_buf.truncate(new_len);
+                        } else if stderr_line_buf.ends_with(b"\n") {
+                            let new_len = stderr_line_buf.len() - 1;
+                            stderr_line_buf.truncate(new_len);
+                        }
+                        let l = String::from_utf8_lossy(&stderr_line_buf).into_owned();
+                        stderr_line_buf.clear();
                         (sink.on_stderr_line)(&l);
                         combined_stderr.push_str(&l);
                         combined_stderr.push('\n');
                     }
-                    Ok(None) => {
-                        // stderr EOF — keep draining stdout.
-                    }
                     Err(e) => {
                         tracing::warn!("stderr read error: {e}");
+                        stderr_line_buf.clear();
                     }
                 }
             }
@@ -168,10 +187,26 @@ pub async fn run_script(
         combined_stdout.push_str(&l);
         combined_stdout.push('\n');
     }
-    while let Ok(Some(l)) = stderr_reader.next_line().await {
-        (sink.on_stderr_line)(&l);
-        combined_stderr.push_str(&l);
-        combined_stderr.push('\n');
+    // Drain remaining stderr bytes with the same lossy conversion.
+    loop {
+        stderr_line_buf.clear();
+        match stderr_reader.read_until(b'\n', &mut stderr_line_buf).await {
+            Ok(0) => break,
+            Ok(_) => {
+                if stderr_line_buf.ends_with(b"\r\n") {
+                    let new_len = stderr_line_buf.len() - 2;
+                    stderr_line_buf.truncate(new_len);
+                } else if stderr_line_buf.ends_with(b"\n") {
+                    let new_len = stderr_line_buf.len() - 1;
+                    stderr_line_buf.truncate(new_len);
+                }
+                let l = String::from_utf8_lossy(&stderr_line_buf).into_owned();
+                (sink.on_stderr_line)(&l);
+                combined_stderr.push_str(&l);
+                combined_stderr.push('\n');
+            }
+            Err(_) => break,
+        }
     }
 
     let status = child
