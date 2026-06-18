@@ -1878,7 +1878,9 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
             }
         }
         
-        Add-Content -Path $envPath -Value $envContent -Encoding UTF8
+        # Append without UTF-8 BOM (Add-Content -Encoding UTF8 adds BOM in PS5.1)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::AppendAllText($envPath, $envContent, $utf8NoBom)
         Write-Success "Configured $envPath with API key and email secrets"
     }
 
@@ -1893,11 +1895,14 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
         }
 
         # Patch models.py
+        # Write the Python script to a temp file to avoid PS5.1 command-line
+        # argument quoting bugs that silently corrupt complex multiline -c scripts.
+        # This mirrors the macOS approach which uses a stdin heredoc (python3 - <<'PYEOF').
         if (Test-Path $modelsPy) {
             $pythonScript = @"
-import json, re, sys
+            import json, os, re, sys
 path, model = sys.argv[1], sys.argv[2]
-models_json = sys.argv[3] if len(sys.argv) > 3 else "[]"
+            models_json = os.environ.get("HERMES_BOOTSTRAP_MODELS_JSON", "[]")
 try:
     models = [m for m in json.loads(models_json) if isinstance(m, str) and m.strip()]
 except Exception:
@@ -1962,10 +1967,18 @@ src = re.sub(
 open(path, "w", encoding="utf-8").write(src)
 print("models.py patched")
 "@
-            $modelsJson = if ([string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODELS_JSON)) { "[]" } else { $env:HERMES_BOOTSTRAP_MODELS_JSON }
-            & $pythonCmd -c $pythonScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL $modelsJson
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "Patched models.py to pin openai-api and suppress copilot"
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            $tempScript = [System.IO.Path]::GetTempFileName() + ".py"
+            try {
+                [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
+                & $pythonCmd $tempScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Patched models.py to pin openai-api and suppress copilot"
+                } else {
+                    Write-Warning "models.py patch exited with code $LASTEXITCODE — model list may not be pinned"
+                }
+            } finally {
+                Remove-Item $tempScript -ErrorAction SilentlyContinue
             }
         }
 
@@ -1988,14 +2001,14 @@ if '# Custom: copilot suppressed' not in src:
 
 # Skip copilot slugs early in the HERMES_OVERLAYS loop
 old_loop = (
-    '        # Resolve Hermes slug — e.g. "github-copilot" → "copilot"\n'
+    '        # Resolve Hermes slug \u2014 e.g. "github-copilot" \u2192 "copilot"\n'
     '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
     '        if hermes_slug.lower() in seen_slugs:\n'
     '            continue'
 )
 if '# Custom: suppress copilot' not in src:
     new_loop = (
-        '        # Resolve Hermes slug — e.g. "github-copilot" → "copilot"\n'
+        '        # Resolve Hermes slug \u2014 e.g. "github-copilot" \u2192 "copilot"\n'
         '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
         '        if hermes_slug.lower() in seen_slugs:\n'
         '            continue\n\n'
@@ -2008,9 +2021,18 @@ if '# Custom: suppress copilot' not in src:
 open(path, "w", encoding="utf-8").write(src)
 print("model_switch.py patched")
 "@
-            & $pythonCmd -c $pythonScript $switchPy
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "Patched model_switch.py to suppress copilot from picker"
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            $tempScript = [System.IO.Path]::GetTempFileName() + ".py"
+            try {
+                [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
+                & $pythonCmd $tempScript $switchPy
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Patched model_switch.py to suppress copilot from picker"
+                } else {
+                    Write-Warning "model_switch.py patch exited with code $LASTEXITCODE — copilot suppression may not be active"
+                }
+            } finally {
+                Remove-Item $tempScript -ErrorAction SilentlyContinue
             }
         }
     }
