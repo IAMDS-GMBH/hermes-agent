@@ -1531,7 +1531,7 @@ function Install-Dependencies {
     $pythonExeForParse = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { (& $UvCmd python find $PythonVersion) }
     $allExtras = @()
     if (Test-Path $pythonExeForParse) {
-        $parsed = & $pythonExeForParse -c @"
+        $parseScript = @"
 import re, sys, tomllib
 try:
     with open('pyproject.toml', 'rb') as fh:
@@ -1544,7 +1544,8 @@ try:
     print(','.join(out))
 except Exception:
     sys.exit(1)
-"@ 2>$null
+"@
+        $parsed = & $pythonExeForParse -c $parseScript 2>$null
         if ($LASTEXITCODE -eq 0 -and $parsed) {
             $allExtras = $parsed.Trim().Split(',')
         }
@@ -1798,25 +1799,33 @@ function Apply-BootstrapCredentials {
 
             $llmGatewayUrl = "$baseRoot/litellm/v1"
             $mcpServerUrl = "$baseRoot/litellm/mcp"
+            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MEMORY_API_URL)) {
+                $mcpServerUrl = $env:HERMES_BOOTSTRAP_MEMORY_API_URL.TrimEnd('/')
+            }
 
             $config = $config -replace '(?m)^\s+provider:.*$', '  provider: openai-api'
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '(?m)^\s+base_url:.*$', "  base_url: $escapedUrl"
 
-            # Only append mcp_servers block if there is no UNCOMMENTED mcp_servers: key.
-            # The template contains "# mcp_servers:" as a comment example, so we must
-            # anchor to line-start with no leading whitespace — matching macOS's
-            # `grep -q "^mcp_servers:"` which also requires the key to be uncommented.
-            if ($config -notmatch '(?m)^mcp_servers:') {
-                $mcpBlock = @"
-
-mcp_servers:
+            # Upsert mcp_servers.memory with Bearer auth using API key.
+            # Keep other existing MCP servers untouched.
+            $memoryEntry = @"
   memory:
     url: $mcpServerUrl
     headers:
       Authorization: "Bearer $($env:HERMES_BOOTSTRAP_API_KEY)"
 "@
-                $config += $mcpBlock
+            $mcpMatch = [regex]::Match($config, '(?ms)^mcp_servers:\r?\n(.*?)(?=^\S|\z)')
+            if ($mcpMatch.Success) {
+                $body = $mcpMatch.Groups[1].Value
+                $body = [regex]::Replace($body, '(?ms)^  memory:\r?\n(?:    .*\r?\n)*', '')
+                $newRoot = "mcp_servers:`n$memoryEntry$body"
+                $config = $config.Substring(0, $mcpMatch.Index) + $newRoot + $config.Substring($mcpMatch.Index + $mcpMatch.Length)
+            } else {
+                if (-not $config.EndsWith("`n")) {
+                    $config += "`n"
+                }
+                $config += "`nmcp_servers:`n$memoryEntry"
             }
         }
 
@@ -2042,6 +2051,7 @@ function Copy-ConfigTemplates {
     Write-Info "Setting up configuration files..."
 
     $hermesWorkDir = Join-Path $HOME 'Documents\HermesWorkingDirectory'
+    $hermesMemoryDir = Join-Path $HOME 'Documents\HermesMemory'
     
     # Create the HERMES_HOME directory structure ($HermesHome, default %LOCALAPPDATA%\hermes)
     New-Item -ItemType Directory -Force -Path "$HermesHome\cron" | Out-Null
@@ -2054,6 +2064,18 @@ function Copy-ConfigTemplates {
     New-Item -ItemType Directory -Force -Path "$HermesHome\memories" | Out-Null
     New-Item -ItemType Directory -Force -Path "$HermesHome\skills" | Out-Null
     New-Item -ItemType Directory -Force -Path $hermesWorkDir | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $HOME 'Documents') | Out-Null
+
+    # Expose local memory files in Documents\HermesMemory for user visibility.
+    # Use a junction so filesystem memory and $HermesHome\memories stay in sync.
+    if (-not (Test-Path $hermesMemoryDir)) {
+        try {
+            New-Item -ItemType Junction -Path $hermesMemoryDir -Target "$HermesHome\memories" | Out-Null
+        } catch {
+            # Fallback: create regular directory if junction creation fails.
+            New-Item -ItemType Directory -Force -Path $hermesMemoryDir | Out-Null
+        }
+    }
 
     
     # Create .env

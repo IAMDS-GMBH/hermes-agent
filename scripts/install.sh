@@ -1680,24 +1680,48 @@ apply_bootstrap_credentials() {
             esac
             llm_gateway_url="${base_root}/litellm/v1"
             mcp_server_url="${base_root}/litellm/mcp"
+            if [ -n "${HERMES_BOOTSTRAP_MEMORY_API_URL:-}" ]; then
+                mcp_server_url="${HERMES_BOOTSTRAP_MEMORY_API_URL%/}"
+            fi
 
             sed -i.bak 's/^  provider: .*/  provider: openai-api/' "$HERMES_HOME/config.yaml" || true
             # Escape URL for sed (forward slashes need escaping)
             escaped_url=$(printf '%s\n' "${llm_gateway_url}" | sed 's/[\/&]/\\&/g')
             sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
 
-            # Check if mcp_servers already exists
-            if ! grep -q "^mcp_servers:" "$HERMES_HOME/config.yaml"; then
-                # Append mcp_servers block with Bearer auth using API key
-                cat >> "$HERMES_HOME/config.yaml" << MCP_EOF
-
-mcp_servers:
-  memory:
-    url: ${mcp_server_url}
-    headers:
-      Authorization: "Bearer ${HERMES_BOOTSTRAP_API_KEY}"
-MCP_EOF
+            # Upsert mcp_servers.memory with Bearer auth using API key.
+            # Keep other existing MCP servers untouched.
+            local cfg_python
+            cfg_python="python3"
+            if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+                cfg_python="$INSTALL_DIR/venv/bin/python"
             fi
+            "$cfg_python" - "$HERMES_HOME/config.yaml" "${mcp_server_url}" "${HERMES_BOOTSTRAP_API_KEY}" <<'PYEOF'
+import re
+import sys
+
+path, mcp_url, api_key = sys.argv[1], sys.argv[2], sys.argv[3]
+text = open(path, encoding="utf-8").read()
+memory_block = (
+    "  memory:\n"
+    f"    url: {mcp_url}\n"
+    "    headers:\n"
+    f"      Authorization: \"Bearer {api_key}\"\n"
+)
+
+root = re.search(r"(?ms)^mcp_servers:\n(.*?)(?=^\S|\Z)", text)
+if root:
+    body = root.group(1)
+    body = re.sub(r"(?ms)^  memory:\n(?:    .*\n)*", "", body)
+    new_root = "mcp_servers:\n" + memory_block + body
+    text = text[:root.start()] + new_root + text[root.end():]
+else:
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += "\nmcp_servers:\n" + memory_block
+
+open(path, "w", encoding="utf-8").write(text)
+PYEOF
         fi
 
         # Clean up backup file
@@ -1918,12 +1942,20 @@ sync_aimds_custom_assets() {
 copy_config_templates() {
     log_info "Setting up configuration files..."
 
-    local hermes_work_dir leveldb_dir seed_script
+    local hermes_work_dir memory_fs_dir leveldb_dir seed_script
     hermes_work_dir="$HOME/Documents/HermesWorkingDirectory"
+    memory_fs_dir="$HOME/Documents/HermesMemory"
 
     # Create ~/.hermes directory structure (config at top level, code in subdir)
     mkdir -p "$HERMES_HOME"/{cron,sessions,logs,pairing,hooks,image_cache,audio_cache,memories,skills}
     mkdir -p "$hermes_work_dir"
+    mkdir -p "$HOME/Documents"
+
+    # Expose local memory files in Documents/HermesMemory for user visibility.
+    # We use a symlink so filesystem memory and ~/.hermes/memories stay in sync.
+    if [ ! -e "$memory_fs_dir" ]; then
+        ln -s "$HERMES_HOME/memories" "$memory_fs_dir" 2>/dev/null || true
+    fi
 
     # Create .env at ~/.hermes/.env (top level, easy to find)
     if [ ! -f "$HERMES_HOME/.env" ]; then

@@ -192,6 +192,33 @@ def _log_exit(reason: str) -> None:
     print(f"[gateway-exit] {reason}", file=sys.stderr, flush=True)
 
 
+def _mcp_discovery_wait_timeout(default_timeout: float) -> float:
+    """Return bounded join timeout for first MCP tool snapshot.
+
+    If a memory MCP server is configured, use a longer first-wait window so the
+    initial agent tool snapshot includes memory tools more reliably.
+    """
+    # Explicit env override wins.
+    env_timeout = os.environ.get("HERMES_MCP_DISCOVERY_WAIT_SECONDS", "").strip()
+    if env_timeout:
+        try:
+            return max(0.0, float(env_timeout))
+        except ValueError:
+            pass
+
+    try:
+        from hermes_cli.config import read_raw_config
+
+        mcp_servers = (read_raw_config() or {}).get("mcp_servers")
+        if isinstance(mcp_servers, dict) and isinstance(mcp_servers.get("memory"), dict):
+            # Remote memory MCPs are commonly slower than local stdio tools.
+            return 6.0
+    except Exception:
+        pass
+
+    return default_timeout
+
+
 def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
     """Briefly block until background MCP discovery finishes, up to ``timeout``.
 
@@ -207,7 +234,7 @@ def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
     thread = _mcp_discovery_thread
     if thread is None or not thread.is_alive():
         return
-    thread.join(timeout=timeout)
+    thread.join(timeout=_mcp_discovery_wait_timeout(timeout))
 
 
 def main():

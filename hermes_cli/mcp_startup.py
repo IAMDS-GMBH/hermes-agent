@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Optional
 
@@ -56,4 +57,23 @@ def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
     thread = _mcp_discovery_thread
     if thread is None or not thread.is_alive():
         return
+    # Explicit env override wins.
+    timeout_override = os.environ.get("HERMES_MCP_DISCOVERY_WAIT_SECONDS", "").strip()
+    if timeout_override:
+        try:
+            timeout = max(0.0, float(timeout_override))
+        except ValueError:
+            pass
+    else:
+        # Memory MCP endpoints are often remote and need a longer first wait
+        # to be present in the initial tool snapshot.
+        try:
+            from hermes_cli.config import read_raw_config
+
+            mcp_servers = (read_raw_config() or {}).get("mcp_servers")
+            if isinstance(mcp_servers, dict) and isinstance(mcp_servers.get("memory"), dict):
+                timeout = 6.0
+        except Exception:
+            pass
+
     thread.join(timeout=timeout)
