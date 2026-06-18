@@ -1995,7 +1995,7 @@ print("model_switch.py patched")
             }
         }
     }
-
+}
 
 function Resolve-AimdsInstallerDir {
     if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_AIMDS_SETUP_DIR)) {
