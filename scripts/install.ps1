@@ -1162,6 +1162,25 @@ function Install-Repository {
                 # users hit on update. Pin autocrlf=false so the dirt is never
                 # created in the first place.
                 git -c windows.appendAtomically=false config core.autocrlf false 2>$null
+                # Clear any unmerged index entries left by a previous interrupted
+                # install.  An unresolved index prevents stash push and causes
+                # "error: could not write index" / "needs merge" diagnostics.
+                git -c windows.appendAtomically=false reset HEAD 2>$null
+                # Normalize CRLF-only dirty files: these are autocrlf=true
+                # artifacts from the initial clone (Windows default), not real
+                # local changes.  Re-checking them out with autocrlf=false (now
+                # configured above) converts CRLF back to LF so they no longer
+                # appear dirty.  Files with genuine content changes are left
+                # untouched and will be picked up by the stash below.
+                $crlfOnlyFiles = @(git diff --name-only 2>$null) | Where-Object {
+                    $_ -and -not (git diff --ignore-cr-at-eol -- $_ 2>$null | Where-Object { $_ })
+                }
+                if ($crlfOnlyFiles.Count -gt 0) {
+                    Write-Info "Normalizing $($crlfOnlyFiles.Count) CRLF-only file(s)..."
+                    foreach ($f in $crlfOnlyFiles) {
+                        git -c windows.appendAtomically=false checkout -- $f 2>$null
+                    }
+                }
                 # Preserve any real local changes before the checkout instead of
                 # discarding them with `reset --hard HEAD`. The old hard reset
                 # silently destroyed agent-edited source on managed clones (the
@@ -1292,7 +1311,7 @@ function Install-Repository {
         Write-Info "Trying SSH clone..."
         $env:GIT_SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=5"
         try {
-            git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlSsh $InstallDir
+            git -c windows.appendAtomically=false -c core.autocrlf=false clone --depth 1 --branch $Branch $RepoUrlSsh $InstallDir
             if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
         } catch { }
         $env:GIT_SSH_COMMAND = $null
@@ -1301,7 +1320,7 @@ function Install-Repository {
             if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
             Write-Info "SSH failed, trying HTTPS..."
             try {
-                git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlHttps $InstallDir
+                git -c windows.appendAtomically=false -c core.autocrlf=false clone --depth 1 --branch $Branch $RepoUrlHttps $InstallDir
                 if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
             } catch { }
         }
