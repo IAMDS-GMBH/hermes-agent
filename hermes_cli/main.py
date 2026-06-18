@@ -296,6 +296,7 @@ from hermes_cli.subcommands.acp import build_acp_parser
 from hermes_cli.subcommands.tools import build_tools_parser
 from hermes_cli.subcommands.insights import build_insights_parser
 from hermes_cli.subcommands.skills import build_skills_parser
+from hermes_cli.subcommands.litellm_hub import build_litellm_hub_parser
 from hermes_cli.subcommands.pairing import build_pairing_parser
 from hermes_cli.subcommands.plugins import build_plugins_parser
 from hermes_cli.subcommands.mcp import build_mcp_parser
@@ -10901,6 +10902,12 @@ def cmd_skills(args):
         skills_command(args)
 
 
+def cmd_litellm_hub(args):
+    from hermes_cli.litellm_hub import litellm_hub_command
+
+    return litellm_hub_command(args)
+
+
 def cmd_pairing(args):
     from hermes_cli.pairing import pairing_command
 
@@ -11240,6 +11247,11 @@ def main():
     # skills command  (parser built in hermes_cli/subcommands/skills.py)
     # =========================================================================
     build_skills_parser(subparsers, cmd_skills=cmd_skills)
+
+    # =========================================================================
+    # litellm-hub command (parser built in hermes_cli/subcommands/litellm_hub.py)
+    # =========================================================================
+    build_litellm_hub_parser(subparsers, cmd_litellm_hub=cmd_litellm_hub)
 
     # =========================================================================
     # bundles command — skill bundles (alias /<name> for multiple skills)

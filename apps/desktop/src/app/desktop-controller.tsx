@@ -124,6 +124,7 @@ const AgentsView = lazy(async () => ({ default: (await import('./agents')).Agent
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
+const HubView = lazy(async () => ({ default: (await import('./hub')).HubView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
@@ -1030,6 +1031,14 @@ export function DesktopController() {
           <Route
             element={
               <Suspense fallback={null}>
+                <HubView />
+              </Suspense>
+            }
+            path="hub"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
                 <MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />
               </Suspense>
             }
@@ -1044,6 +1053,7 @@ export function DesktopController() {
             path="artifacts"
           />
           <Route element={null} path="cron" />
+          <Route element={null} path="hub" />
           <Route element={null} path="profiles" />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />

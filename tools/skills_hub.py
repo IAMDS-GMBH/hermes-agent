@@ -33,6 +33,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 import yaml
 
+from agent.litellm_hub_client import fetch_litellm_hub_json
 from tools.skills_guard import (
     ScanResult, content_hash, TRUSTED_REPOS,
 )
@@ -1355,6 +1356,164 @@ class UrlSource(SkillSource):
 
         # Nothing usable — let the caller handle it.
         return None
+
+
+# ---------------------------------------------------------------------------
+# LiteLLM Skill Hub source adapter
+# ---------------------------------------------------------------------------
+
+class LiteLLMSkillHubSource(SkillSource):
+    """Discover skills from LiteLLM's public Skill Hub endpoint."""
+
+    _PREFIX = "litellm-skill-hub/"
+
+    def __init__(self, auth: GitHubAuth):
+        self._github = GitHubSource(auth=auth)
+        self._url = UrlSource()
+
+    def source_id(self) -> str:
+        return "litellm-skill-hub"
+
+    def trust_level_for(self, identifier: str) -> str:
+        return "community"
+
+    def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
+        entries = self._load_entries()
+        if not entries:
+            return []
+
+        query_lower = query.strip().lower()
+        results: List[SkillMeta] = []
+        for entry in entries:
+            meta = self._to_meta(entry)
+            if not meta:
+                continue
+            if query_lower:
+                searchable = " ".join([
+                    meta.name,
+                    meta.description,
+                    " ".join(meta.tags or []),
+                    str(meta.extra.get("domain", "")),
+                    str(meta.extra.get("namespace", "")),
+                ]).lower()
+                if query_lower not in searchable:
+                    continue
+            results.append(meta)
+            if len(results) >= limit:
+                break
+        return results
+
+    def inspect(self, identifier: str) -> Optional[SkillMeta]:
+        entry = self._find_entry(identifier)
+        if not entry:
+            return None
+        return self._to_meta(entry)
+
+    def fetch(self, identifier: str) -> Optional[SkillBundle]:
+        entry = self._find_entry(identifier)
+        if not entry:
+            return None
+
+        source = entry.get("source")
+        if not isinstance(source, dict):
+            return None
+
+        source_type = str(source.get("source", "")).strip().lower()
+        url = str(source.get("url", "")).strip()
+        path = str(source.get("path", "")).strip().strip("/")
+
+        bundle: Optional[SkillBundle] = None
+        if source_type in {"git-subdir", "github"}:
+            repo, repo_path = self._parse_github_source(url, path)
+            if not repo or not repo_path:
+                return None
+            gh_identifier = f"{repo}/{repo_path}"
+            bundle = self._github.fetch(gh_identifier)
+        elif source_type == "url" and url:
+            bundle = self._url.fetch(url)
+
+        if not bundle:
+            return None
+
+        skill_name = str(entry.get("name", bundle.name or "")).strip()
+        if not skill_name:
+            return None
+        try:
+            skill_name = _validate_skill_name(skill_name)
+        except ValueError:
+            return None
+
+        bundle.name = skill_name
+        bundle.source = self.source_id()
+        bundle.identifier = f"{self._PREFIX}{skill_name}"
+        bundle.metadata = {
+            **(bundle.metadata or {}),
+            "litellm_skill_hub": entry,
+        }
+        return bundle
+
+    def _load_entries(self) -> List[Dict[str, Any]]:
+        data, _err = fetch_litellm_hub_json("skill_hub", require_auth=False)
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            for key in ("skills", "items", "data"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
+        return []
+
+    def _find_entry(self, identifier: str) -> Optional[Dict[str, Any]]:
+        needle = identifier.strip()
+        if needle.startswith(self._PREFIX):
+            needle = needle[len(self._PREFIX):]
+        needle = needle.strip().lower()
+        if not needle:
+            return None
+
+        for entry in self._load_entries():
+            name = str(entry.get("name", "")).strip()
+            if name.lower() == needle:
+                return entry
+        return None
+
+    def _to_meta(self, entry: Dict[str, Any]) -> Optional[SkillMeta]:
+        name = str(entry.get("name", "")).strip()
+        if not name:
+            return None
+        description = str(entry.get("description", "")).strip()
+        keywords = entry.get("keywords", [])
+        tags = [str(k) for k in keywords] if isinstance(keywords, list) else []
+        return SkillMeta(
+            name=name,
+            description=description,
+            source=self.source_id(),
+            identifier=f"{self._PREFIX}{name}",
+            trust_level="community",
+            tags=tags,
+            extra={
+                "domain": entry.get("domain"),
+                "namespace": entry.get("namespace"),
+                "version": entry.get("version"),
+                "source": entry.get("source"),
+            },
+        )
+
+    @staticmethod
+    def _parse_github_source(url: str, path: str) -> Tuple[str, str]:
+        parsed_path = ""
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            parsed = None
+        if parsed and parsed.netloc.lower() == "github.com":
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) >= 2:
+                repo = f"{parts[0]}/{parts[1]}"
+                if len(parts) >= 4 and parts[2] == "tree":
+                    parsed_path = "/".join(parts[4:])
+                return repo, (path or parsed_path).strip("/")
+        return "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -3691,7 +3850,14 @@ class HermesIndexSource(SkillSource):
 
         # Try without source prefix (e.g. "skills-sh/" stripped)
         normalized = identifier
-        for prefix in ("skills-sh/", "skills.sh/", "official/", "github/", "clawhub/"):
+        for prefix in (
+            "skills-sh/",
+            "skills.sh/",
+            "official/",
+            "github/",
+            "clawhub/",
+            "litellm-skill-hub/",
+        ):
             if identifier.startswith(prefix):
                 normalized = identifier[len(prefix):]
                 break
@@ -3701,7 +3867,14 @@ class HermesIndexSource(SkillSource):
             sid = s.get("identifier", "")
             # Strip prefix from stored identifier too
             stored_normalized = sid
-            for prefix in ("skills-sh/", "skills.sh/", "official/", "github/", "clawhub/"):
+            for prefix in (
+                "skills-sh/",
+                "skills.sh/",
+                "official/",
+                "github/",
+                "clawhub/",
+                "litellm-skill-hub/",
+            ):
                 if sid.startswith(prefix):
                     stored_normalized = sid[len(prefix):]
                     break
@@ -3742,6 +3915,7 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
         SkillsShSource(auth=auth),
         WellKnownSkillSource(),
         UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file
+        LiteLLMSkillHubSource(auth=auth),
         GitHubSource(auth=auth, extra_taps=extra_taps),
         ClawHubSource(),
         ClaudeMarketplaceSource(auth=auth),

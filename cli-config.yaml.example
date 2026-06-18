@@ -584,6 +584,14 @@ skills:
   # external_dirs:
   #   - ~/.agents/skills
   #   - /home/shared/team-skills
+  #
+  # LiteLLM AI Hub / Skill Hub integration:
+  # Use this to discover LiteLLM public Skill Hub entries in `hermes skills`
+  # and query Agent/Model hubs via `hermes litellm-hub`.
+  # litellm_hub:
+  #   base_url: "http://localhost:4000"  # Your LiteLLM proxy base URL
+  #   api_key: ""                        # Optional (required for agent/model hubs on many setups)
+  #   timeout: 20
 
 # =============================================================================
 # Agent Behavior

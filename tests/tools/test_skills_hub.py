@@ -11,6 +11,7 @@ import pytest
 from tools.skills_hub import (
     GitHubAuth,
     GitHubSource,
+    LiteLLMSkillHubSource,
     LobeHubSource,
     SkillsShSource,
     UrlSource,
@@ -1295,12 +1296,74 @@ class TestCreateSourceRouter:
         sources = create_source_router(auth=MagicMock(spec=GitHubAuth))
         assert any(isinstance(src, UrlSource) for src in sources)
 
+    def test_includes_litellm_skill_hub_source(self):
+        sources = create_source_router(auth=MagicMock(spec=GitHubAuth))
+        assert any(isinstance(src, LiteLLMSkillHubSource) for src in sources)
+
     def test_url_source_runs_before_github_source(self):
         # UrlSource must win over GitHubSource when both could claim a URL.
         sources = create_source_router(auth=MagicMock(spec=GitHubAuth))
         url_idx = next(i for i, src in enumerate(sources) if isinstance(src, UrlSource))
         gh_idx = next(i for i, src in enumerate(sources) if isinstance(src, GitHubSource))
         assert url_idx < gh_idx
+
+
+class TestLiteLLMSkillHubSource:
+    def _source(self):
+        return LiteLLMSkillHubSource(auth=MagicMock(spec=GitHubAuth))
+
+    def test_search_reads_public_skill_hub(self):
+        payload = [
+            {
+                "name": "grill-me",
+                "description": "Interview skill",
+                "domain": "Productivity",
+                "namespace": "interviews",
+                "keywords": ["interview", "qa"],
+                "source": {
+                    "source": "git-subdir",
+                    "url": "https://github.com/mattpocock/skills",
+                    "path": "grill-me",
+                },
+            }
+        ]
+
+        with patch("tools.skills_hub.fetch_litellm_hub_json", return_value=(payload, None)):
+            results = self._source().search("grill", limit=10)
+
+        assert len(results) == 1
+        assert results[0].source == "litellm-skill-hub"
+        assert results[0].identifier == "litellm-skill-hub/grill-me"
+        assert "interview" in results[0].tags
+
+    def test_fetch_delegates_gitsubdir_to_github_source(self):
+        payload = [
+            {
+                "name": "grill-me",
+                "description": "Interview skill",
+                "source": {
+                    "source": "git-subdir",
+                    "url": "https://github.com/mattpocock/skills",
+                    "path": "grill-me",
+                },
+            }
+        ]
+        upstream_bundle = SkillBundle(
+            name="grill-me",
+            files={"SKILL.md": "# grill"},
+            source="github",
+            identifier="mattpocock/skills/grill-me",
+            trust_level="community",
+        )
+        src = self._source()
+
+        with patch("tools.skills_hub.fetch_litellm_hub_json", return_value=(payload, None)), \
+             patch.object(src._github, "fetch", return_value=upstream_bundle):
+            bundle = src.fetch("litellm-skill-hub/grill-me")
+
+        assert bundle is not None
+        assert bundle.source == "litellm-skill-hub"
+        assert bundle.identifier == "litellm-skill-hub/grill-me"
 
 
 # ---------------------------------------------------------------------------

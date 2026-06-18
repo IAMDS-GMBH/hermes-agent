@@ -14,7 +14,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
     skills_parser = subparsers.add_parser(
         "skills",
         help="Search, install, configure, and manage skills",
-        description="Search, install, inspect, audit, configure, and manage skills from skills.sh, well-known agent skill endpoints, GitHub, ClawHub, and other registries.",
+        description="Search, install, inspect, audit, configure, and manage skills from skills.sh, LiteLLM Skill Hub, well-known agent skill endpoints, GitHub, ClawHub, and other registries.",
     )
     skills_subparsers = skills_parser.add_subparsers(dest="skills_action")
 
@@ -36,6 +36,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
             "skills-sh",
             "well-known",
             "github",
+            "litellm-skill-hub",
             "clawhub",
             "lobehub",
             "browse-sh",
@@ -56,6 +57,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
             "skills-sh",
             "well-known",
             "github",
+            "litellm-skill-hub",
             "clawhub",
             "lobehub",
             "browse-sh",

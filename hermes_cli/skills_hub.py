@@ -347,7 +347,8 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     _PER_SOURCE_LIMIT = {
         "hermes-index": 1000000,
         "official": 200, "skills-sh": 200, "well-known": 50,
-        "github": 200, "clawhub": 500, "claude-marketplace": 100,
+        "github": 200, "litellm-skill-hub": 200,
+        "clawhub": 500, "claude-marketplace": 100,
         "lobehub": 500, "browse-sh": 500,
     }
 
@@ -768,7 +769,8 @@ def browse_skills(page: int = 1, page_size: int = 20, source: str = "all") -> di
     # router skips external API sources and serves everything from it, so a
     # low cap here silently truncates the whole hub (see do_browse note).
     _PER_SOURCE_LIMIT = {"hermes-index": 5000, "official": 100, "skills-sh": 100,
-                         "well-known": 25, "github": 100, "clawhub": 50,
+                         "well-known": 25, "github": 100,
+                         "litellm-skill-hub": 100, "clawhub": 50,
                          "claude-marketplace": 50, "lobehub": 50, "browse-sh": 500}
     auth = GitHubAuth()
     sources = create_source_router(auth)
@@ -1685,7 +1687,7 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
 
     elif action == "search":
         if not args:
-            c.print("[bold red]Usage:[/] /skills search <query> [--source skills-sh|well-known|github|official] [--limit N] [--json]\n")
+            c.print("[bold red]Usage:[/] /skills search <query> [--source skills-sh|well-known|github|official|litellm-skill-hub] [--limit N] [--json]\n")
             return
         source = "all"
         limit = 10

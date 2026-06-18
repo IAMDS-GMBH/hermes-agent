@@ -1821,6 +1821,15 @@ DEFAULT_CONFIG = {
         #                     never crammed into a chat bubble), apply with
         #                     /skills approve <id> or drop with /skills reject <id>.
         "write_approval": False,
+        # LiteLLM AI Hub / Skill Hub integration.
+        #   base_url: LiteLLM proxy URL (e.g. http://localhost:4000)
+        #   api_key: user/master key for authenticated public hubs
+        #   timeout: request timeout in seconds
+        "litellm_hub": {
+            "base_url": "",
+            "api_key": "",
+            "timeout": 20,
+        },
     },
 
     # Curator — background skill maintenance.
