@@ -1,8 +1,14 @@
 import type { Locale } from './types'
 
-export const DEFAULT_LOCALE: Locale = 'en'
+export const DEFAULT_LOCALE: Locale = 'de'
 
 export const LOCALE_OPTIONS = [
+  {
+    id: 'de',
+    name: 'Deutsch',
+    englishName: 'German',
+    configValue: 'de'
+  },
   {
     id: 'en',
     name: 'English',
@@ -38,6 +44,13 @@ export const LOCALE_META: Record<Locale, { name: string; englishName: string }> 
 ) as Record<Locale, { name: string; englishName: string }>
 
 const LOCALE_ALIASES: Record<string, Locale> = {
+  de: 'de',
+  'de-de': 'de',
+  de_de: 'de',
+  'de-at': 'de',
+  de_at: 'de',
+  'de-ch': 'de',
+  de_ch: 'de',
   en: 'en',
   'en-us': 'en',
   en_us: 'en',

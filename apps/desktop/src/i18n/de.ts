@@ -2,7 +2,8 @@ import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
 import type { Translations } from './types'
 
-export const en: Translations = {
+export const de
+: Translations = {
   common: {
     apply: 'Apply',
     back: 'Back',

@@ -862,6 +862,7 @@ export const zh: Translations = {
       newChat: { title: '新建会话', detail: '开始一个新会话' },
       settings: { title: '设置', detail: '配置 Hermes 桌面端' },
       skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
+      discover: { title: '发现', detail: '浏览 LiteLLM 智能体与技能' },
       messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },
       artifacts: { title: '产物', detail: '浏览生成的输出' }
     },
