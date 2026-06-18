@@ -1900,9 +1900,9 @@ OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
         # This mirrors the macOS approach which uses a stdin heredoc (python3 - <<'PYEOF').
         if (Test-Path $modelsPy) {
             $pythonScript = @"
-            import json, os, re, sys
+import json, os, re, sys
 path, model = sys.argv[1], sys.argv[2]
-            models_json = os.environ.get("HERMES_BOOTSTRAP_MODELS_JSON", "[]")
+models_json = os.environ.get("HERMES_BOOTSTRAP_MODELS_JSON", "[]")
 try:
     models = [m for m in json.loads(models_json) if isinstance(m, str) and m.strip()]
 except Exception:
