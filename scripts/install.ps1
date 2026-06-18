@@ -1791,9 +1791,15 @@ function Write-BootstrapMarker {
 function Apply-BootstrapCredentials {
     # Apply credentials from bootstrap env vars (HERMES_BOOTSTRAP_API_KEY, etc.)
     # Called during config setup when installer was launched with credentials.
-    
+    $bootstrapApiKey = $env:HERMES_BOOTSTRAP_API_KEY
+    $bootstrapModel = $env:HERMES_BOOTSTRAP_MODEL
+    $bootstrapEmail = $env:HERMES_BOOTSTRAP_EMAIL
+    $bootstrapEmailPassword = $env:HERMES_BOOTSTRAP_EMAIL_PASSWORD
+    $bootstrapImapServer = $env:HERMES_BOOTSTRAP_IMAP_SERVER
+    $bootstrapSmtpServer = $env:HERMES_BOOTSTRAP_SMTP_SERVER
+
     # If no API key provided, skip — use interactive mode or defaults
-    if ([string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_API_KEY)) {
+    if ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
         return
     }
 
@@ -1803,8 +1809,8 @@ function Apply-BootstrapCredentials {
     $configPath = "$HermesHome\config.yaml"
     if (Test-Path $configPath) {
         $config = Get-Content $configPath -Raw -Encoding UTF8
-        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
-            $config = $config -replace '(?m)^\s+default:.*$', "  default: $($env:HERMES_BOOTSTRAP_MODEL)"
+        if (-not [string]::IsNullOrWhiteSpace($bootstrapModel)) {
+            $config = $config -replace '(?m)^\s+default:.*$', "  default: $bootstrapModel"
         }
 
         # Replace model.base_url from base URL root
@@ -1832,7 +1838,7 @@ function Apply-BootstrapCredentials {
   memory:
     url: $mcpServerUrl
     headers:
-      Authorization: "Bearer $($env:HERMES_BOOTSTRAP_API_KEY)"
+      Authorization: "Bearer $bootstrapApiKey"
 "@
             $mcpMatch = [regex]::Match($config, '(?ms)^mcp_servers:\r?\n(.*?)(?=^\S|\z)')
             if ($mcpMatch.Success) {
@@ -1859,22 +1865,22 @@ function Apply-BootstrapCredentials {
     if (Test-Path $envPath) {
         $envContent = @"
 # Added by bootstrap installer
-OPENAI_API_KEY=$($env:HERMES_BOOTSTRAP_API_KEY)
+OPENAI_API_KEY=$bootstrapApiKey
 "@
         
         # Add email secrets if provided
-        if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_EMAIL)) {
+        if (-not [string]::IsNullOrWhiteSpace($bootstrapEmail)) {
             $envContent += "`n# Email gateway configuration`n"
-            $envContent += "EMAIL_ADDRESS=$($env:HERMES_BOOTSTRAP_EMAIL)`n"
+            $envContent += ('EMAIL_ADDRESS={0}' -f $bootstrapEmail) + [Environment]::NewLine
             
-            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_EMAIL_PASSWORD)) {
-                $envContent += "EMAIL_PASSWORD=$($env:HERMES_BOOTSTRAP_EMAIL_PASSWORD)`n"
+            if (-not [string]::IsNullOrWhiteSpace($bootstrapEmailPassword)) {
+                $envContent += ('EMAIL_PASSWORD={0}' -f $bootstrapEmailPassword) + [Environment]::NewLine
             }
-            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_IMAP_SERVER)) {
-                $envContent += "IMAP_SERVER=$($env:HERMES_BOOTSTRAP_IMAP_SERVER)`n"
+            if (-not [string]::IsNullOrWhiteSpace($bootstrapImapServer)) {
+                $envContent += ('IMAP_SERVER={0}' -f $bootstrapImapServer) + [Environment]::NewLine
             }
-            if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_SMTP_SERVER)) {
-                $envContent += "SMTP_SERVER=$($env:HERMES_BOOTSTRAP_SMTP_SERVER)`n"
+            if (-not [string]::IsNullOrWhiteSpace($bootstrapSmtpServer)) {
+                $envContent += ('SMTP_SERVER={0}' -f $bootstrapSmtpServer) + [Environment]::NewLine
             }
         }
         
