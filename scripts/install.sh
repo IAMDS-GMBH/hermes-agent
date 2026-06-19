@@ -2922,6 +2922,8 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
         or _first_provider_base_url(cfg)
         or ""
     ).strip().rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3]
     api_key = str(
         hub_cfg.get("api_key")
         or os.getenv("LITELLM_KEY")
@@ -2993,11 +2995,8 @@ def fetch_litellm_hub_json(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Many model base URLs are configured as .../v1. Public LiteLLM hub
-    # endpoints live under .../public/*, so normalize the base path first.
-    public_base_url = base_url[:-3] if base_url.endswith("/v1") else base_url
     public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
-    url = f"{public_base_url}/public/{public_endpoint}"
+    url = f"{base_url}/public/{public_endpoint}"
     try:
         resp = httpx.get(
             url,
