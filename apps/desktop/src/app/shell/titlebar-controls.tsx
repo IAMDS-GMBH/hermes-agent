@@ -18,7 +18,7 @@ import {
   toggleSidebarOpen
 } from '@/store/layout'
 
-import { appViewForPath, isOverlayView } from '../routes'
+import { AGENTS_ROUTE, appViewForPath, HUB_ROUTE, isOverlayView } from '../routes'
 
 import { titlebarButtonClass } from './titlebar'
 
@@ -137,11 +137,18 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
     }
   ]
 
+  const query = new URLSearchParams(location.search)
+  const hubTab = query.get('tab')
+  const discoveryOnLegacyOverlayPath =
+    location.pathname === AGENTS_ROUTE &&
+    (hubTab === 'agents' || hubTab === 'skills')
+  const discoveryRouteOpen = location.pathname === HUB_ROUTE || discoveryOnLegacyOverlayPath
+
   // While a full-screen overlay (settings, command center, …) is open it should
   // visually own the window. These control clusters are `fixed` at a higher
   // z-index than the overlay card, so they'd otherwise bleed over it — hide them
   // and let the overlay's own chrome (close button, drag region) take over.
-  if (isOverlayView(appViewForPath(location.pathname))) {
+  if (isOverlayView(appViewForPath(location.pathname)) && !discoveryRouteOpen) {
     return null
   }
 
