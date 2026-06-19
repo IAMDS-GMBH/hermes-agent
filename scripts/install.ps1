@@ -92,8 +92,8 @@ try {
 # Configuration
 # ============================================================================
 
-$RepoUrlSsh = "git@github.com:NousResearch/hermes-agent.git"
-$RepoUrlHttps = "https://github.com/NousResearch/hermes-agent.git"
+$RepoUrlSsh = "git@github.com:IAMDS-GMBH/hermes-agent.git"
+$RepoUrlHttps = "https://github.com/IAMDS-GMBH/hermes-agent.git"
 $PythonVersion = "3.11"
 $NodeVersion = "22"
 
@@ -1334,13 +1334,13 @@ function Install-Repository {
                 # for.  GitHub supports archive URLs for commits, tags, and
                 # branches; we honour Commit > Tag > Branch.
                 if ($Commit) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/$Commit.zip"
+                    $zipUrl = "https://github.com/IAMDS-GMBH/hermes-agent/archive/$Commit.zip"
                     $zipLabel = $Commit
                 } elseif ($Tag) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$Tag.zip"
+                    $zipUrl = "https://github.com/IAMDS-GMBH/hermes-agent/archive/refs/tags/$Tag.zip"
                     $zipLabel = $Tag
                 } else {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/$Branch.zip"
+                    $zipUrl = "https://github.com/IAMDS-GMBH/hermes-agent/archive/refs/heads/$Branch.zip"
                     $zipLabel = $Branch
                 }
                 $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"
@@ -1789,6 +1789,10 @@ function Write-BootstrapMarker {
 }
 
 function Apply-BootstrapCredentials {
+    # Always ensure bootstrap installs have web tooling defaults, even when
+    # no API key was supplied.
+    Ensure-BootstrapToolConfig
+
     # Apply credentials from bootstrap env vars (HERMES_BOOTSTRAP_API_KEY, etc.)
     # Called during config setup when installer was launched with credentials.
     $bootstrapApiKey = $env:HERMES_BOOTSTRAP_API_KEY
@@ -2041,6 +2045,58 @@ print("model_switch.py patched")
                 Remove-Item $tempScript -ErrorAction SilentlyContinue
             }
         }
+    }
+}
+
+function Ensure-BootstrapToolConfig {
+    $configPath = "$HermesHome\config.yaml"
+    if (-not (Test-Path $configPath)) { return }
+
+    $pythonCmd = "python"
+    $venvPython = "$InstallDir\venv\Scripts\python.exe"
+    if (Test-Path $venvPython) { $pythonCmd = $venvPython }
+
+    $pythonScript = @"
+import sys
+import yaml
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = yaml.safe_load(fh) or {}
+
+web = data.setdefault("web", {})
+if not web.get("backend"):
+    web["backend"] = "ddgs"
+web.setdefault("search_backend", "")
+web.setdefault("extract_backend", "")
+web.setdefault("use_gateway", False)
+
+platform_toolsets = data.setdefault("platform_toolsets", {})
+cli_toolsets = platform_toolsets.get("cli")
+if isinstance(cli_toolsets, str):
+    cli_toolsets = [cli_toolsets]
+elif not isinstance(cli_toolsets, list):
+    cli_toolsets = []
+if "web" not in cli_toolsets:
+    cli_toolsets.append("web")
+platform_toolsets["cli"] = cli_toolsets
+
+with open(path, "w", encoding="utf-8") as fh:
+    yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=False)
+"@
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $tempScript = [System.IO.Path]::GetTempFileName() + ".py"
+    try {
+        [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
+        & $pythonCmd $tempScript $configPath
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Ensured bootstrap tool config (web backend + platform_toolsets.cli)"
+        } else {
+            Write-Warn "Could not ensure bootstrap tool config (python exit $LASTEXITCODE)"
+        }
+    } finally {
+        Remove-Item $tempScript -ErrorAction SilentlyContinue
     }
 }
 

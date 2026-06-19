@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
+REPO_URL_SSH="git@github.com:IAMDS-GMBH/hermes-agent.git"
+REPO_URL_HTTPS="https://github.com/IAMDS-GMBH/hermes-agent.git"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
@@ -1657,6 +1657,10 @@ EOF
 # Apply credentials from bootstrap env vars (HERMES_BOOTSTRAP_API_KEY, etc.)
 # Called during config setup when installer was launched with credentials.
 apply_bootstrap_credentials() {
+    # Always ensure bootstrap installs have web tooling defaults, even when
+    # no API key was supplied.
+    ensure_bootstrap_tool_config
+
     # If no API key provided, skip — use interactive mode or defaults
     if [ -z "${HERMES_BOOTSTRAP_API_KEY:-}" ]; then
         return 0
@@ -1878,6 +1882,48 @@ PYEOF
         
         log_success "Configured .env with API key and email secrets"
     fi
+}
+
+ensure_bootstrap_tool_config() {
+    local config_path cfg_python
+    config_path="$HERMES_HOME/config.yaml"
+    [ -f "$config_path" ] || return 0
+
+    cfg_python="python3"
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        cfg_python="$INSTALL_DIR/venv/bin/python"
+    fi
+
+    "$cfg_python" - "$config_path" <<'PYEOF' || return 0
+import sys
+import yaml
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = yaml.safe_load(fh) or {}
+
+web = data.setdefault("web", {})
+if not web.get("backend"):
+    web["backend"] = "ddgs"
+web.setdefault("search_backend", "")
+web.setdefault("extract_backend", "")
+web.setdefault("use_gateway", False)
+
+platform_toolsets = data.setdefault("platform_toolsets", {})
+cli_toolsets = platform_toolsets.get("cli")
+if isinstance(cli_toolsets, str):
+    cli_toolsets = [cli_toolsets]
+elif not isinstance(cli_toolsets, list):
+    cli_toolsets = []
+if "web" not in cli_toolsets:
+    cli_toolsets.append("web")
+platform_toolsets["cli"] = cli_toolsets
+
+with open(path, "w", encoding="utf-8") as fh:
+    yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=False)
+PYEOF
+
+    log_success "Ensured bootstrap tool config (web backend + platform_toolsets.cli)"
 }
 
 resolve_aimds_installer_dir() {
