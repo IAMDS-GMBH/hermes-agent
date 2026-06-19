@@ -1077,6 +1077,7 @@ export const de
     nav: {
       'new-session': 'New session',
       skills: 'Skills & Tools',
+      discover: 'Discovery',
       messaging: 'Messaging',
       artifacts: 'Artifacts'
     },
