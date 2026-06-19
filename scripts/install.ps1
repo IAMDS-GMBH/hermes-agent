@@ -2081,6 +2081,13 @@ if "web" not in cli_toolsets:
     cli_toolsets.append("web")
 platform_toolsets["cli"] = cli_toolsets
 
+skills = data.setdefault("skills", {})
+litellm_hub = skills.setdefault("litellm_hub", {})
+if not litellm_hub.get("base_url"):
+    litellm_hub["base_url"] = "http://localhost:4000"
+litellm_hub.setdefault("api_key", "")
+litellm_hub.setdefault("timeout", 20)
+
 with open(path, "w", encoding="utf-8") as fh:
     yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=False)
 "@
@@ -2091,7 +2098,7 @@ with open(path, "w", encoding="utf-8") as fh:
         [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
         & $pythonCmd $tempScript $configPath
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "Ensured bootstrap tool config (web backend + platform_toolsets.cli)"
+            Write-Success "Ensured bootstrap tool config (web backend, platform_toolsets.cli, litellm_hub)"
         } else {
             Write-Warn "Could not ensure bootstrap tool config (python exit $LASTEXITCODE)"
         }

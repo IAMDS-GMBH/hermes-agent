@@ -1919,11 +1919,18 @@ if "web" not in cli_toolsets:
     cli_toolsets.append("web")
 platform_toolsets["cli"] = cli_toolsets
 
+skills = data.setdefault("skills", {})
+litellm_hub = skills.setdefault("litellm_hub", {})
+if not litellm_hub.get("base_url"):
+    litellm_hub["base_url"] = "http://localhost:4000"
+litellm_hub.setdefault("api_key", "")
+litellm_hub.setdefault("timeout", 20)
+
 with open(path, "w", encoding="utf-8") as fh:
     yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=False)
 PYEOF
 
-    log_success "Ensured bootstrap tool config (web backend + platform_toolsets.cli)"
+    log_success "Ensured bootstrap tool config (web backend, platform_toolsets.cli, litellm_hub)"
 }
 
 resolve_aimds_installer_dir() {
