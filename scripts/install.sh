@@ -2681,6 +2681,826 @@ _desktop_pack() {
     fi
 }
 
+# Some upstream branches may not yet ship desktop German locale wiring.
+# Patch it before building the desktop app so the language picker always
+# includes "Deutsch" and default locale resolves to "de".
+ensure_desktop_german_locale() {
+    local desktop_dir="$1"
+    local i18n_dir="$desktop_dir/src/i18n"
+    local py=""
+
+    [ -d "$i18n_dir" ] || return 0
+
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        py="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        py="$(command -v python)"
+    else
+        log_warn "Python unavailable; skipping desktop German locale patch"
+        return 0
+    fi
+
+    "$py" - "$i18n_dir" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+i18n = Path(sys.argv[1])
+changed = False
+
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+def write(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+types_path = i18n / "types.ts"
+languages_path = i18n / "languages.ts"
+catalog_path = i18n / "catalog.ts"
+en_path = i18n / "en.ts"
+de_path = i18n / "de.ts"
+
+# Ensure de.ts exists. If upstream doesn't have a dedicated German file yet,
+# clone English as a safe fallback so runtime keys remain complete.
+if not de_path.exists() and en_path.exists():
+    de_content = read(en_path).replace("export const en: Translations = {", "export const de: Translations = {", 1)
+    write(de_path, de_content)
+    changed = True
+
+if types_path.exists():
+    t = read(types_path)
+    m = re.search(r"export type Locale = ([^\n]+)", t)
+    if m and "'de'" not in m.group(1):
+        updated = f"export type Locale = 'de' | {m.group(1)}"
+        t2 = t[: m.start()] + updated + t[m.end() :]
+        if t2 != t:
+            write(types_path, t2)
+            changed = True
+
+if languages_path.exists():
+    t = read(languages_path)
+    t2 = t
+
+    t2 = t2.replace("export const DEFAULT_LOCALE: Locale = 'en'", "export const DEFAULT_LOCALE: Locale = 'de'")
+
+    if "id: 'de'" not in t2:
+        t2 = t2.replace(
+            "export const LOCALE_OPTIONS = [\n",
+            "export const LOCALE_OPTIONS = [\n"
+            "  {\n"
+            "    id: 'de',\n"
+            "    name: 'Deutsch',\n"
+            "    englishName: 'German',\n"
+            "    configValue: 'de'\n"
+            "  },\n",
+            1,
+        )
+
+    if "\n  de: 'de'," not in t2:
+        t2 = t2.replace(
+            "const LOCALE_ALIASES: Record<string, Locale> = {\n",
+            "const LOCALE_ALIASES: Record<string, Locale> = {\n"
+            "  de: 'de',\n"
+            "  'de-de': 'de',\n"
+            "  de_de: 'de',\n"
+            "  'de-at': 'de',\n"
+            "  de_at: 'de',\n"
+            "  'de-ch': 'de',\n"
+            "  de_ch: 'de',\n",
+            1,
+        )
+
+    if t2 != t:
+        write(languages_path, t2)
+        changed = True
+
+if catalog_path.exists():
+    t = read(catalog_path)
+    t2 = t
+    if "import { de } from './de'" not in t2:
+        t2 = t2.replace("import { en } from './en'\n", "import { de } from './de'\nimport { en } from './en'\n", 1)
+    if re.search(r"export const TRANSLATIONS: Record<Locale, Translations> = \{\n", t2) and "\n  de,\n" not in t2:
+        t2 = t2.replace(
+            "export const TRANSLATIONS: Record<Locale, Translations> = {\n",
+            "export const TRANSLATIONS: Record<Locale, Translations> = {\n  de,\n",
+            1,
+        )
+    if t2 != t:
+        write(catalog_path, t2)
+        changed = True
+
+print("patched" if changed else "already")
+PY
+}
+
+# Creates/patches the LiteLLM Hub gateway module and RPC methods in the
+# cloned upstream repo. Idempotent.
+ensure_litellm_hub_gateway() {
+    local repo_dir="$1"
+    local py=""
+
+    [ -d "$repo_dir" ] || return 0
+
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        py="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        py="$(command -v python)"
+    else
+        log_warn "Python unavailable; skipping LiteLLM Hub gateway patch"
+        return 0
+    fi
+
+    "$py" - "$repo_dir" <<'PY'
+from pathlib import Path
+import sys
+
+repo = Path(sys.argv[1])
+changed = False
+
+def read(p: Path) -> str:
+    return p.read_text(encoding="utf-8")
+
+def write(p: Path, content: str) -> None:
+    p.write_text(content, encoding="utf-8")
+
+# ---------------------------------------------------------------------------
+# 1. Create/overwrite agent/litellm_hub_client.py with provider-fallback logic
+# ---------------------------------------------------------------------------
+hub_client = repo / "agent" / "litellm_hub_client.py"
+hub_client_content = '''\
+"""Helpers for LiteLLM public hub endpoints (Skill/Agent/Model Hub)."""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional, Tuple
+
+import httpx
+
+
+def resolve_litellm_hub_settings() -> Dict[str, Any]:
+    """Resolve LiteLLM hub settings from config.yaml with env fallback.
+
+    Resolution order for base_url:
+    1. skills.litellm_hub.base_url (explicit hub override)
+    2. LITELLM_PROXY_URL env var
+    3. OPENAI_BASE_URL env var
+    4. First provider entry with a base_url (the model provider is usually LiteLLM)
+    """
+    from hermes_cli.config import load_config
+
+    cfg = load_config() or {}
+    skills_cfg = cfg.get("skills", {}) if isinstance(cfg, dict) else {}
+    hub_cfg = skills_cfg.get("litellm_hub", {}) if isinstance(skills_cfg, dict) else {}
+
+    base_url = str(
+        hub_cfg.get("base_url")
+        or os.getenv("LITELLM_PROXY_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or _first_provider_base_url(cfg)
+        or ""
+    ).strip().rstrip("/")
+    api_key = str(
+        hub_cfg.get("api_key")
+        or os.getenv("LITELLM_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or _first_provider_api_key(cfg)
+        or ""
+    ).strip()
+    timeout_raw = hub_cfg.get("timeout", 20)
+    try:
+        timeout = max(1, int(timeout_raw))
+    except (TypeError, ValueError):
+        timeout = 20
+
+    return {"base_url": base_url, "api_key": api_key, "timeout": timeout}
+
+
+def _first_provider_base_url(cfg: Dict[str, Any]) -> str:
+    providers = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(providers, dict):
+        return ""
+    for entry in providers.values():
+        if not isinstance(entry, dict):
+            continue
+        for key in ("base_url", "url", "api"):
+            val = entry.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip().rstrip("/")
+    return ""
+
+
+def _first_provider_api_key(cfg: Dict[str, Any]) -> str:
+    providers = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(providers, dict):
+        return ""
+    for entry in providers.values():
+        if not isinstance(entry, dict):
+            continue
+        val = entry.get("api_key")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def fetch_litellm_hub_json(
+    public_path: str,
+    *,
+    require_auth: bool,
+    settings: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[Any], Optional[str]]:
+    """Fetch JSON from ``/public/<public_path>`` on a LiteLLM proxy."""
+    settings = settings or resolve_litellm_hub_settings()
+    base_url = str(settings.get("base_url", "")).strip().rstrip("/")
+    api_key = str(settings.get("api_key", "")).strip()
+    timeout = settings.get("timeout", 20)
+
+    if not base_url:
+        return None, (
+            "LiteLLM hub is not configured. "
+            "Set skills.litellm_hub.base_url in config.yaml "
+            "or configure a provider with a base_url."
+        )
+    if require_auth and not api_key:
+        return None, (
+            "This LiteLLM hub endpoint requires authentication. "
+            "Set skills.litellm_hub.api_key (or LITELLM_KEY)."
+        )
+
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    url = f"{base_url}/public/{public_path.lstrip('/')}"
+    try:
+        resp = httpx.get(
+            url,
+            headers=headers or None,
+            timeout=timeout,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError as exc:
+        return None, f"Failed to reach LiteLLM hub at {url}: {exc}"
+
+    if resp.status_code == 401:
+        return None, "LiteLLM hub request failed: unauthorized (401). Check API key."
+    if resp.status_code == 403:
+        return None, "LiteLLM hub request failed: forbidden (403). Check API key scope."
+    if resp.status_code != 200:
+        return None, f"LiteLLM hub request failed: HTTP {resp.status_code} from {url}."
+
+    try:
+        return resp.json(), None
+    except ValueError:
+        return None, f"LiteLLM hub returned non-JSON response from {url}."
+'''
+
+# Always write — ensures updated resolver even if file already exists
+existing = read(hub_client) if hub_client.exists() else ""
+if hub_client_content != existing:
+    hub_client.parent.mkdir(parents=True, exist_ok=True)
+    write(hub_client, hub_client_content)
+    changed = True
+
+# ---------------------------------------------------------------------------
+# 2. Patch tui_gateway/server.py — append litellm_hub methods if missing
+# ---------------------------------------------------------------------------
+server_py = repo / "tui_gateway" / "server.py"
+if server_py.exists():
+    t = read(server_py)
+    if 'litellm_hub.agents' not in t:
+        # Find a good insertion point: just before @method("plugins.manage") if present,
+        # else append before the last non-blank line.
+        insertion = (
+            '\n\n@method("litellm_hub.agents")\n'
+            'def _(rid, params: dict) -> dict:\n'
+            '    """Fetch LiteLLM Agent Hub entries."""\n'
+            '    try:\n'
+            '        from agent.litellm_hub_client import fetch_litellm_hub_json\n'
+            '        data, error = fetch_litellm_hub_json("agents", require_auth=False)\n'
+            '        if error:\n'
+            '            return _err(rid, 5026, error)\n'
+            '        agents = data if isinstance(data, list) else (data.get("agents", []) if data else [])\n'
+            '        return _ok(rid, {"agents": agents})\n'
+            '    except Exception as e:\n'
+            '        return _err(rid, 5027, str(e))\n'
+            '\n\n'
+            '@method("litellm_hub.skills")\n'
+            'def _(rid, params: dict) -> dict:\n'
+            '    """Fetch LiteLLM Skill Hub entries."""\n'
+            '    try:\n'
+            '        from agent.litellm_hub_client import fetch_litellm_hub_json\n'
+            '        data, error = fetch_litellm_hub_json("skills", require_auth=False)\n'
+            '        if error:\n'
+            '            return _err(rid, 5028, error)\n'
+            '        skills = data if isinstance(data, list) else (data.get("skills", []) if data else [])\n'
+            '        return _ok(rid, {"skills": skills})\n'
+            '    except Exception as e:\n'
+            '        return _err(rid, 5029, str(e))\n'
+        )
+        anchor = '@method("plugins.manage")'
+        if anchor in t:
+            t2 = t.replace(anchor, insertion.lstrip('\n') + '\n' + anchor, 1)
+        else:
+            t2 = t.rstrip() + insertion
+        write(server_py, t2)
+        changed = True
+
+print("patched" if changed else "already")
+PY
+}
+
+# Patches the cloned desktop source to add the Discover / Hub sidebar section.
+# Idempotent; safe to call even if the upstream already has the changes.
+ensure_desktop_hub_sidebar() {
+    local desktop_dir="$1"
+    local app_dir="$desktop_dir/src/app"
+    local py=""
+
+    [ -d "$app_dir" ] || return 0
+
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        py="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        py="$(command -v python)"
+    else
+        log_warn "Python unavailable; skipping desktop Hub sidebar patch"
+        return 0
+    fi
+
+    "$py" - "$app_dir" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+app_dir = Path(sys.argv[1])
+i18n_dir = app_dir.parent / "i18n"
+changed = False
+
+def read(p: Path) -> str:
+    return p.read_text(encoding="utf-8")
+
+def write(p: Path, content: str) -> None:
+    p.write_text(content, encoding="utf-8")
+
+def patch(p: Path, old: str, new: str) -> bool:
+    if not p.exists():
+        return False
+    t = read(p)
+    if old in t:
+        write(p, t.replace(old, new, 1))
+        return True
+    return False  # already patched or not found
+
+# ---------------------------------------------------------------------------
+# 1. Create hub/index.tsx if missing
+# ---------------------------------------------------------------------------
+hub_dir = app_dir / "hub"
+hub_file = hub_dir / "index.tsx"
+if not hub_file.exists():
+    hub_dir.mkdir(parents=True, exist_ok=True)
+    hub_file.write_text(
+        r"""import type * as React from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
+import { PageLoader } from '@/components/page-loader'
+import { Badge } from '@/components/ui/badge'
+import { Codicon } from '@/components/ui/codicon'
+import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
+import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
+import { notifyError } from '@/store/notifications'
+import { useGatewayRequest } from '../gateway/hooks/use-gateway-request'
+
+import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
+import { useRouteEnumParam } from '../hooks/use-route-enum-param'
+import { PAGE_INSET_X } from '../layout-constants'
+import { PageSearchShell } from '../page-search-shell'
+import { includesQuery, prettyName } from '../settings/helpers'
+
+const HUB_MODES = ['agents', 'skills'] as const
+type HubMode = (typeof HUB_MODES)[number]
+
+interface LiteLLMAgent {
+  id: string
+  name: string
+  description?: string
+}
+
+interface LiteLLMSkill {
+  id: string
+  name: string
+  description?: string
+  source?: string
+}
+
+function filteredAgents(agents: LiteLLMAgent[], query: string): LiteLLMAgent[] {
+  const q = query.trim().toLowerCase()
+  return agents
+    .filter(agent => !q || includesQuery(agent.name, q) || includesQuery(agent.description || '', q))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
+function filteredSkills(skills: LiteLLMSkill[], query: string): LiteLLMSkill[] {
+  const q = query.trim().toLowerCase()
+  return skills
+    .filter(skill => !q || includesQuery(skill.name, q) || includesQuery(skill.description || '', q))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
+interface HubViewProps extends React.ComponentProps<'section'> {}
+
+export function HubView({ ...props }: HubViewProps) {
+  const { t } = useI18n()
+  const { requestGateway } = useGatewayRequest()
+  const [mode, setMode] = useRouteEnumParam('tab', HUB_MODES, 'agents')
+
+  const [query, setQuery] = useState('')
+  const [agents, setAgents] = useState<LiteLLMAgent[] | null>(null)
+  const [skills, setSkills] = useState<LiteLLMSkill[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = async () => {
+    setError(null)
+    try {
+      if (mode === 'agents') {
+        const data = await requestGateway<{ agents: unknown[] }>('litellm_hub.agents', { limit: 100 })
+        setAgents((data?.agents || []).map((a: unknown) => {
+          const x = a as Record<string, unknown>
+          return { id: String(x.id || x.name || ''), name: String(x.name || ''), description: x.description ? String(x.description) : undefined }
+        }))
+      } else {
+        const data = await requestGateway<{ skills: unknown[] }>('litellm_hub.skills', { limit: 100 })
+        setSkills((data?.skills || []).map((s: unknown) => {
+          const x = s as Record<string, unknown>
+          return { id: String(x.id || x.name || ''), name: String(x.name || ''), description: x.description ? String(x.description) : undefined, source: x.source ? String(x.source) : undefined }
+        }))
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      notifyError(err, `Failed to load ${mode}`)
+    }
+  }
+
+  useEffect(() => { void refresh() }, [mode])
+  useRefreshHotkey(refresh)
+
+  const filteredAgentsList = useMemo(() => agents ? filteredAgents(agents, query) : null, [agents, query])
+  const filteredSkillsList = useMemo(() => skills ? filteredSkills(skills, query) : null, [skills, query])
+  const isLoading = (mode === 'agents' && agents === null) || (mode === 'skills' && skills === null)
+
+  return (
+    <section {...props} className={cn('flex flex-col overflow-hidden', props.className)}>
+      <PageSearchShell
+        searchValue={query}
+        onSearchChange={setQuery}
+        searchPlaceholder={mode === 'agents' ? 'Search agents...' : 'Search skills...'}
+        tabs={
+          <>
+            <TextTab active={mode === 'agents'} onClick={() => setMode('agents')} className="data-[active]:bg-accent/5">
+              <span>Agents</span>
+              {filteredAgentsList && <Badge variant="outline" className="ml-2 pointer-events-none">{filteredAgentsList.length}</Badge>}
+            </TextTab>
+            <TextTab active={mode === 'skills'} onClick={() => setMode('skills')} className="data-[active]:bg-accent/5">
+              <span>Skills</span>
+              {filteredSkillsList && <Badge variant="outline" className="ml-2 pointer-events-none">{filteredSkillsList.length}</Badge>}
+            </TextTab>
+          </>
+        }
+      >
+        {error && (
+          <div className="px-4 py-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 m-4 rounded">
+            {error}
+          </div>
+        )}
+        {isLoading ? (
+          <PageLoader />
+        ) : mode === 'agents' ? (
+          <AgentsList agents={filteredAgentsList || []} query={query} />
+        ) : (
+          <SkillsList skills={filteredSkillsList || []} query={query} />
+        )}
+      </PageSearchShell>
+    </section>
+  )
+}
+
+function AgentsList({ agents, query }: { agents: LiteLLMAgent[]; query: string }) {
+  return (
+    <div className="overflow-y-auto flex-1">
+      {agents.length === 0 ? (
+        <div className={cn('flex items-center justify-center h-full text-sm text-muted-foreground', PAGE_INSET_X)}>
+          {query ? 'No agents match your search.' : 'No agents available.'}
+        </div>
+      ) : (
+        <div className={cn('space-y-1 p-4', PAGE_INSET_X)}>
+          {agents.map(agent => (
+            <div key={agent.id} className="p-3 rounded border border-border bg-card hover:bg-accent/5 transition-colors">
+              <div className="flex items-start gap-2">
+                <Codicon className="mt-1" name="robot" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-foreground">{agent.name}</div>
+                  {agent.description && <div className="text-sm text-muted-foreground mt-1 line-clamp-2">{agent.description}</div>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SkillsList({ skills, query }: { skills: LiteLLMSkill[]; query: string }) {
+  return (
+    <div className="overflow-y-auto flex-1">
+      {skills.length === 0 ? (
+        <div className={cn('flex items-center justify-center h-full text-sm text-muted-foreground', PAGE_INSET_X)}>
+          {query ? 'No skills match your search.' : 'No skills available.'}
+        </div>
+      ) : (
+        <div className={cn('space-y-1 p-4', PAGE_INSET_X)}>
+          {skills.map(skill => (
+            <div key={skill.id} className="p-3 rounded border border-border bg-card hover:bg-accent/5 transition-colors">
+              <div className="flex items-start gap-2">
+                <Codicon className="mt-1" name="lightbulb" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-foreground">{skill.name}</div>
+                  {skill.description && <div className="text-sm text-muted-foreground mt-1 line-clamp-2">{skill.description}</div>}
+                  {skill.source && <div className="text-xs text-muted-foreground/70 mt-1 font-mono truncate">{skill.source}</div>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+""",
+        encoding="utf-8",
+    )
+    changed = True
+
+# ---------------------------------------------------------------------------
+# 2. routes.ts — add HUB_ROUTE constant, 'hub' to AppView/AppRouteId/APP_ROUTES/OVERLAY_VIEWS
+# ---------------------------------------------------------------------------
+routes_path = app_dir / "routes.ts"
+if routes_path.exists():
+    t = read(routes_path)
+    t2 = t
+
+    # HUB_ROUTE constant
+    if "HUB_ROUTE" not in t2:
+        t2 = t2.replace(
+            "export const AGENTS_ROUTE = '/agents'",
+            "export const AGENTS_ROUTE = '/agents'\nexport const HUB_ROUTE = '/hub'",
+            1,
+        )
+
+    # AppView union — add 'hub'
+    m = re.search(r"(export type AppView =\n(?:  \| '[^']+'\n)+)", t2)
+    if m and "'hub'" not in m.group(1):
+        old_view = m.group(1)
+        new_view = old_view.rstrip("\n") + "\n  | 'hub'\n"
+        t2 = t2.replace(old_view, new_view, 1)
+
+    # AppRouteId union — add 'hub'
+    m2 = re.search(r"(export type AppRouteId =\n(?:  \| '[^']+'\n)+)", t2)
+    if m2 and "'hub'" not in m2.group(1):
+        old_id = m2.group(1)
+        new_id = old_id.rstrip("\n") + "\n  | 'hub'\n"
+        t2 = t2.replace(old_id, new_id, 1)
+
+    # APP_ROUTES array — insert hub entry before agents
+    if "path: HUB_ROUTE" not in t2 and "id: 'agents'" in t2:
+        t2 = t2.replace(
+            "  { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }",
+            "  { id: 'hub', path: HUB_ROUTE, view: 'hub' },\n  { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }",
+            1,
+        )
+
+    # OVERLAY_VIEWS — add 'hub'
+    m3 = re.search(r"(export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set\(\[)([^\]]+)(\]\))", t2)
+    if m3 and "'hub'" not in m3.group(2):
+        t2 = t2[:m3.start(2)] + m3.group(2).rstrip() + ", 'hub'" + t2[m3.end(2):]
+
+    if t2 != t:
+        write(routes_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 3. desktop-controller.tsx — add HubView lazy import and route
+# ---------------------------------------------------------------------------
+dc_path = app_dir / "desktop-controller.tsx"
+if dc_path.exists():
+    t = read(dc_path)
+    t2 = t
+
+    # Add import to routes
+    if "HUB_ROUTE" not in t2 and "AGENTS_ROUTE" in t2:
+        t2 = re.sub(
+            r"(import \{[^}]*AGENTS_ROUTE[^}]*\} from '\.\/routes')",
+            lambda m: m.group(0).replace("AGENTS_ROUTE", "AGENTS_ROUTE, HUB_ROUTE") if "HUB_ROUTE" not in m.group(0) else m.group(0),
+            t2, count=1
+        )
+
+    # Lazy HubView import — insert after CronView
+    if "HubView" not in t2 and "const CronView" in t2:
+        t2 = t2.replace(
+            "const CronView = lazy(",
+            "const CronView = lazy(",
+        )
+        t2 = t2.replace(
+            "const MessagingView = lazy(",
+            "const HubView = lazy(async () => ({ default: (await import('./hub')).HubView }))\nconst MessagingView = lazy(",
+            1,
+        )
+
+    # Route element — insert hub Route after skills Route
+    hub_route_jsx = (
+        "          <Route\n"
+        "            element={\n"
+        "              <Suspense fallback={null}>\n"
+        "                <HubView />\n"
+        "              </Suspense>\n"
+        "            }\n"
+        "            path=\"hub\"\n"
+        "          />"
+    )
+    if "<HubView />" not in t2 and 'path="skills"' in t2:
+        # Insert after the closing tag of the skills Route block
+        t2 = re.sub(
+            r'(            path="skills"\n          />)',
+            r'\1\n' + hub_route_jsx,
+            t2, count=1
+        )
+
+    # Null route placeholder — insert after cron null route
+    if '<Route element={null} path="hub"' not in t2 and '<Route element={null} path="cron"' in t2:
+        t2 = t2.replace(
+            '          <Route element={null} path="cron" />',
+            '          <Route element={null} path="cron" />\n          <Route element={null} path="hub" />',
+            1,
+        )
+
+    if t2 != t:
+        write(dc_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 4. types.ts — add 'discover' to SidebarNavId
+# ---------------------------------------------------------------------------
+types_path = app_dir / "types.ts"
+if types_path.exists():
+    t = read(types_path)
+    if "SidebarNavId" in t and "'discover'" not in t:
+        # Insert 'discover' into the union (keep alphabetical: after 'command-center')
+        t2 = re.sub(
+            r"(export type SidebarNavId = )([^\n]+)",
+            lambda m: m.group(1) + " | ".join(
+                sorted(set(m.group(2).split(" | ") + ["'discover'"]))
+            ) if "'discover'" not in m.group(2) else m.group(0),
+            t,
+        )
+        if t2 != t:
+            write(types_path, t2)
+            changed = True
+
+# ---------------------------------------------------------------------------
+# 5. sidebar/index.tsx — add 'discover' nav item before messaging
+# ---------------------------------------------------------------------------
+sidebar_path = app_dir / "chat" / "sidebar" / "index.tsx"
+if sidebar_path.exists():
+    t = read(sidebar_path)
+    t2 = t
+
+    # Add HUB_ROUTE to import from '../../routes'
+    if "HUB_ROUTE" not in t2 and "SKILLS_ROUTE" in t2:
+        t2 = re.sub(
+            r"(import \{[^}]*SKILLS_ROUTE[^}]*\} from '\.\.\/\.\.\/routes')",
+            lambda m: m.group(0).replace("SKILLS_ROUTE", "SKILLS_ROUTE, HUB_ROUTE") if "HUB_ROUTE" not in m.group(0) else m.group(0),
+            t2, count=1
+        )
+
+    # Add 'discover' nav item between skills and messaging
+    discover_item = (
+        "  {\n"
+        "    id: 'discover',\n"
+        "    label: '',\n"
+        "    icon: props => <Codicon name=\"compass\" {...props} />,\n"
+        "    route: HUB_ROUTE\n"
+        "  },\n"
+    )
+    if "'discover'" not in t2 and "route: MESSAGING_ROUTE" in t2:
+        t2 = re.sub(
+            r"(  \{ id: 'messaging',[^\n]+\n)",
+            discover_item + r"\1",
+            t2, count=1
+        )
+
+    if t2 != t:
+        write(sidebar_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 6. i18n/types.ts — add 'discover' to nav Record key union
+# ---------------------------------------------------------------------------
+i18n_types_path = i18n_dir / "types.ts"
+if i18n_types_path.exists():
+    t = read(i18n_types_path)
+    t2 = t
+    # The nav Record key union is the part between Record< and the first comma
+    # e.g.  nav: Record<'newChat' | 'settings' | 'skills' | 'messaging' | 'artifacts', { ...
+    # We must not match the > inside { title: string; detail: string }
+    m = re.search(r"(nav: Record<)([^,]+)(,\s*\{)", t2)
+    if m and "'discover'" not in m.group(2):
+        new_keys = m.group(2).rstrip() + " | 'discover'"
+        t2 = t2[:m.start(2)] + new_keys + t2[m.end(2):]
+    if t2 != t:
+        write(i18n_types_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 7. i18n/en.ts — add discover keybind and nav entries
+# ---------------------------------------------------------------------------
+en_path = i18n_dir / "en.ts"
+if en_path.exists():
+    t = read(en_path)
+    t2 = t
+    if "'nav.discover'" not in t2 and "'nav.settings'" in t2:
+        t2 = t2.replace(
+            "      'nav.settings':",
+            "      'nav.discover': 'Open Discover',\n      'nav.settings':",
+            1,
+        )
+    if "discover: {" not in t2 and "skills: {" in t2:
+        t2 = re.sub(
+            r"(      skills: \{[^}]+\},?\n)",
+            r"\1      discover: { title: 'Discover', detail: 'Browse LiteLLM agents and skills' },\n",
+            t2, count=1
+        )
+    if t2 != t:
+        write(en_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 8. i18n/zh.ts — add discover entries
+# ---------------------------------------------------------------------------
+zh_path = i18n_dir / "zh.ts"
+if zh_path.exists():
+    t = read(zh_path)
+    t2 = t
+    if "'nav.discover'" not in t2 and "'nav.settings'" in t2:
+        t2 = t2.replace(
+            "      'nav.settings':",
+            "      'nav.discover': '打开探索',\n      'nav.settings':",
+            1,
+        )
+    if "discover: {" not in t2 and "skills: {" in t2:
+        t2 = re.sub(
+            r"(      skills: \{[^}]+\},?\n)",
+            r"\1      discover: { title: '探索', detail: '浏览 LiteLLM 智能体和技能' },\n",
+            t2, count=1
+        )
+    if t2 != t:
+        write(zh_path, t2)
+        changed = True
+
+# ---------------------------------------------------------------------------
+# 9. i18n/de.ts — add discover entries
+# ---------------------------------------------------------------------------
+de_path = i18n_dir / "de.ts"
+if de_path.exists():
+    t = read(de_path)
+    t2 = t
+    if "'nav.discover'" not in t2 and "'nav.settings'" in t2:
+        t2 = t2.replace(
+            "      'nav.settings':",
+            "      'nav.discover': 'Entdecken öffnen',\n      'nav.settings':",
+            1,
+        )
+    if "discover: {" not in t2 and "skills: {" in t2:
+        t2 = re.sub(
+            r"(      skills: \{[^}]+\},?\n)",
+            r"\1      discover: { title: 'Entdecken', detail: 'LiteLLM-Agenten und Fähigkeiten durchsuchen' },\n",
+            t2, count=1
+        )
+    if t2 != t:
+        write(de_path, t2)
+        changed = True
+
+print("patched" if changed else "already")
+PY
+}
+
 # Public Electron mirror used as a last-resort fallback when GitHub's release
 # host is blocked/throttled (the repeating "retrying" symptom). npmmirror.com is
 # the de-facto Electron community mirror (Alibaba). @electron/get SHASUM-checks
@@ -2717,6 +3537,20 @@ install_desktop() {
     if [ ! -f "$desktop_dir/package.json" ]; then
         log_warn "Skipping desktop build (apps/desktop not present in checkout)"
         return 0
+    fi
+
+    log_info "Ensuring desktop German locale wiring..."
+    if ensure_desktop_german_locale "$desktop_dir"; then
+        log_success "Desktop German locale wiring ready"
+    else
+        log_warn "Desktop German locale patch failed; continuing with upstream desktop sources"
+    fi
+
+    log_info "Ensuring desktop Hub / Discover sidebar section..."
+    if ensure_desktop_hub_sidebar "$desktop_dir"; then
+        log_success "Desktop Hub sidebar section ready"
+    else
+        log_warn "Desktop Hub sidebar patch failed; continuing without Discover section"
     fi
 
     # 1. Root workspace install so apps/desktop's deps (Electron, Vite,
@@ -2909,6 +3743,7 @@ run_stage_body() {
             resolve_install_layout
             check_git
             clone_repo
+            ensure_litellm_hub_gateway "$INSTALL_DIR"
             ;;
         venv)
             detect_os
@@ -3037,6 +3872,7 @@ main() {
     install_system_packages
 
     clone_repo
+    ensure_litellm_hub_gateway "$INSTALL_DIR"
     setup_venv
     install_deps
     install_node_deps

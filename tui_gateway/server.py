@@ -9699,50 +9699,30 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Fetch LiteLLM Agent Hub entries."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
-        from hermes_cli.config import load_config
- 
-        config = load_config()
-        settings = resolve_litellm_hub_settings(config)
-        limit = int(params.get("limit", 50) or 50)
- 
-        data, error = fetch_litellm_hub_json(
-            f"{settings['base_url']}/public/agents",
-            settings.get("api_key"),
-            timeout=settings.get("timeout", 30),
-            limit=limit,
-        )
- 
+        from agent.litellm_hub_client import fetch_litellm_hub_json
+
+        data, error = fetch_litellm_hub_json("agents", require_auth=False)
         if error:
             return _err(rid, 5026, error)
- 
-        return _ok(rid, {"agents": data.get("agents", []) if data else []})
+
+        agents = data if isinstance(data, list) else (data.get("agents", []) if data else [])
+        return _ok(rid, {"agents": agents})
     except Exception as e:
         return _err(rid, 5027, str(e))
- 
- 
+
+
 @method("litellm_hub.skills")
 def _(rid, params: dict) -> dict:
     """Fetch LiteLLM Skill Hub entries."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
-        from hermes_cli.config import load_config
- 
-        config = load_config()
-        settings = resolve_litellm_hub_settings(config)
-        limit = int(params.get("limit", 50) or 50)
- 
-        data, error = fetch_litellm_hub_json(
-            f"{settings['base_url']}/public/skills",
-            settings.get("api_key"),
-            timeout=settings.get("timeout", 30),
-            limit=limit,
-        )
- 
+        from agent.litellm_hub_client import fetch_litellm_hub_json
+
+        data, error = fetch_litellm_hub_json("skills", require_auth=False)
         if error:
             return _err(rid, 5028, error)
- 
-        return _ok(rid, {"skills": data.get("skills", []) if data else []})
+
+        skills = data if isinstance(data, list) else (data.get("skills", []) if data else [])
+        return _ok(rid, {"skills": skills})
     except Exception as e:
         return _err(rid, 5029, str(e))
 

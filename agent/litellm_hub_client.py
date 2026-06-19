@@ -9,7 +9,14 @@ import httpx
 
 
 def resolve_litellm_hub_settings() -> Dict[str, Any]:
-    """Resolve LiteLLM hub settings from config.yaml with env fallback."""
+    """Resolve LiteLLM hub settings from config.yaml with env fallback.
+
+    Resolution order for base_url:
+    1. skills.litellm_hub.base_url (explicit hub override)
+    2. LITELLM_PROXY_URL env var
+    3. OPENAI_BASE_URL env var
+    4. First provider entry with a base_url (the model provider is usually LiteLLM)
+    """
     from hermes_cli.config import load_config
 
     cfg = load_config() or {}
@@ -19,11 +26,15 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
     base_url = str(
         hub_cfg.get("base_url")
         or os.getenv("LITELLM_PROXY_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or _first_provider_base_url(cfg)
         or ""
     ).strip().rstrip("/")
     api_key = str(
         hub_cfg.get("api_key")
         or os.getenv("LITELLM_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or _first_provider_api_key(cfg)
         or ""
     ).strip()
     timeout_raw = hub_cfg.get("timeout", 20)
@@ -37,6 +48,35 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
         "api_key": api_key,
         "timeout": timeout,
     }
+
+
+def _first_provider_base_url(cfg: Dict[str, Any]) -> str:
+    """Return the base_url of the first configured provider entry, if any."""
+    providers = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(providers, dict):
+        return ""
+    for entry in providers.values():
+        if not isinstance(entry, dict):
+            continue
+        for key in ("base_url", "url", "api"):
+            val = entry.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip().rstrip("/")
+    return ""
+
+
+def _first_provider_api_key(cfg: Dict[str, Any]) -> str:
+    """Return the api_key of the first configured provider entry, if any."""
+    providers = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(providers, dict):
+        return ""
+    for entry in providers.values():
+        if not isinstance(entry, dict):
+            continue
+        val = entry.get("api_key")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
 
 
 def fetch_litellm_hub_json(

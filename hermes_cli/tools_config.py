@@ -1762,16 +1762,23 @@ def _configure_toolset(
     config: dict,
     *,
     force_fresh: bool = True,
+    first_install: bool = False,
 ):
     """Configure a toolset - provider selection + API keys.
     
     Uses TOOL_CATEGORIES for provider-aware config, falls back to simple
     env var prompts for toolsets not in TOOL_CATEGORIES.
+    
+    Args:
+        ts_key: The toolset key (e.g. 'web', 'tts', 'browser')
+        config: The configuration dict to update
+        force_fresh: Force re-fetch of configuration data
+        first_install: If True, use sensible defaults (e.g. ddgs for web)
     """
     cat = TOOL_CATEGORIES.get(ts_key)
 
     if cat:
-        _configure_tool_category(ts_key, cat, config, force_fresh=force_fresh)
+        _configure_tool_category(ts_key, cat, config, force_fresh=force_fresh, first_install=first_install)
     else:
         # Simple fallback for vision, moa, etc.
         _configure_simple_requirements(ts_key)
@@ -2238,8 +2245,17 @@ def _configure_tool_category(
     config: dict,
     *,
     force_fresh: bool = True,
+    first_install: bool = False,
 ):
-    """Configure a tool category with provider selection."""
+    """Configure a tool category with provider selection.
+    
+    Args:
+        ts_key: The toolset key (e.g. 'web', 'tts', 'browser')
+        cat: The tool category configuration dict
+        config: The configuration dict to update
+        force_fresh: Force re-fetch of configuration data
+        first_install: If True, use sensible defaults (e.g. ddgs for web)
+    """
     icon = cat.get("icon", "")
     name = cat["name"]
     providers = _visible_providers(cat, config, force_fresh=force_fresh)
@@ -2335,6 +2351,22 @@ def _configure_tool_category(
             config,
             force_fresh=force_fresh,
         )
+        
+        # During first install, auto-select ddgs for web if no provider is configured
+        if first_install and ts_key == "web":
+            # Check if any provider is actually configured by looking at web config
+            web_cfg = config.get("web", {})
+            if not web_cfg.get("backend"):
+                # No provider configured, auto-select ddgs
+                ddgs_idx = next(
+                    (i for i, p in enumerate(providers) if p.get("web_backend") == "ddgs"),
+                    None
+                )
+                if ddgs_idx is not None:
+                    # Auto-select ddgs without prompting
+                    _print_success(f"  Auto-selected {providers[ddgs_idx]['name']} for web search")
+                    _configure_provider(providers[ddgs_idx], config, force_fresh=force_fresh)
+                    return
 
         provider_idx = _prompt_choice(f"  {title}:", provider_choices, default_idx)
 
@@ -3478,9 +3510,22 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
                 print(color("  You can skip any tool you don't need right now.", Colors.DIM))
                 print()
                 for ts_key in to_configure:
-                    _configure_toolset(ts_key, config)
+                    _configure_toolset(ts_key, config, first_install=first_install)
 
             _save_platform_tools(config, pkey, new_enabled)
+             
+            # During first install, explicitly ensure we save individual toolsets
+            # instead of composites, and ensure web.backend is set if web was enabled.
+            if first_install:
+                config.setdefault("platform_toolsets", {})
+                config["platform_toolsets"][pkey] = sorted(new_enabled)
+                 
+                # Auto-set web.backend to ddgs if web is enabled but not yet configured
+                if "web" in new_enabled:
+                    web_cfg = config.get("web", {})
+                    if not web_cfg.get("backend"):
+                        config.setdefault("web", {})["backend"] = "ddgs"
+             
             save_config(config)
             print(color(f"  ✓ Saved {pinfo['label']} tool configuration", Colors.GREEN))
             print()
