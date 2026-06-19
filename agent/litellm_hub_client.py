@@ -7,6 +7,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+_HUB_PATH_ALIASES = {
+    "agents": "agent_hub",
+    "skills": "skill_hub",
+}
+
 
 def resolve_litellm_hub_settings() -> Dict[str, Any]:
     """Resolve LiteLLM hub settings from config.yaml with env fallback.
@@ -106,7 +111,11 @@ def fetch_litellm_hub_json(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    url = f"{base_url}/public/{public_path.lstrip('/')}"
+    # Many model base URLs are configured as .../v1. Public LiteLLM hub
+    # endpoints live under .../public/*, so normalize the base path first.
+    public_base_url = base_url[:-3] if base_url.endswith("/v1") else base_url
+    public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
+    url = f"{public_base_url}/public/{public_endpoint}"
     try:
         resp = httpx.get(
             url,
@@ -128,4 +137,3 @@ def fetch_litellm_hub_json(
         return resp.json(), None
     except ValueError:
         return None, f"LiteLLM hub returned non-JSON response from {url}."
-

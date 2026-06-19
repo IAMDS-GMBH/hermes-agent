@@ -1053,7 +1053,6 @@ export function DesktopController() {
             path="artifacts"
           />
           <Route element={null} path="cron" />
-          <Route element={null} path="hub" />
           <Route element={null} path="profiles" />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />

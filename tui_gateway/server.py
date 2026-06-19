@@ -9701,7 +9701,7 @@ def _(rid, params: dict) -> dict:
     try:
         from agent.litellm_hub_client import fetch_litellm_hub_json
 
-        data, error = fetch_litellm_hub_json("agents", require_auth=False)
+        data, error = fetch_litellm_hub_json("agent_hub", require_auth=False)
         if error:
             return _err(rid, 5026, error)
 
@@ -9717,7 +9717,7 @@ def _(rid, params: dict) -> dict:
     try:
         from agent.litellm_hub_client import fetch_litellm_hub_json
 
-        data, error = fetch_litellm_hub_json("skills", require_auth=False)
+        data, error = fetch_litellm_hub_json("skill_hub", require_auth=False)
         if error:
             return _err(rid, 5028, error)
 
