@@ -60,10 +60,10 @@ class DDGSWebSearchProvider(WebSearchProvider):
         """Execute a DuckDuckGo search and return normalized results."""
         try:
             from ddgs import DDGS  # type: ignore
-        except ImportError:
+        except ImportError as e:
             return {
                 "success": False,
-                "error": "ddgs package is not installed — run `pip install ddgs`",
+                "error": f"ddgs package is not installed — run `pip install ddgs` ({e})",
             }
 
         # DDGS().text yields at most `max_results` items; we cap defensively
@@ -89,7 +89,9 @@ class DDGSWebSearchProvider(WebSearchProvider):
             logger.warning("DDGS search error: %s", exc)
             return {"success": False, "error": f"DuckDuckGo search failed: {exc}"}
 
-        logger.info("DDGS search '%s': %d results (limit %d)", query, len(web_results), limit)
+        logger.info(
+            "DDGS search '%s': %d results (limit %d)", query, len(web_results), limit
+        )
         return {"success": True, "data": {"web": web_results}}
 
     def get_setup_schema(self) -> Dict[str, Any]:

@@ -1300,6 +1300,10 @@ install_deps() {
         fi
 
         log_success "Main package installed"
+        if ! ensure_ddgs_for_web_search; then
+            log_error "ddgs installation failed. web_search backend 'ddgs' will not work."
+            exit 1
+        fi
         log_info "Termux note: matrix e2ee and local faster-whisper extras are excluded from .[termux-all] due to upstream Android wheel/toolchain blockers."
         log_info "Termux note: browser/WhatsApp tooling is not installed by default; see the Termux guide for optional follow-up steps."
 
@@ -1379,6 +1383,10 @@ install_deps() {
         # gracefully when stdout/stderr aren't terminals.
         if UV_PROJECT_ENVIRONMENT="$INSTALL_DIR/venv" $UV_CMD sync --extra all --locked; then
             log_success "Main package installed (hash-verified via uv.lock)"
+            if ! ensure_ddgs_for_web_search; then
+                log_error "ddgs installation failed. web_search backend 'ddgs' will not work."
+                exit 1
+            fi
             log_success "All dependencies installed"
             return 0
         fi
@@ -1489,8 +1497,39 @@ PY
     fi
 
     log_success "Main package installed"
+    if ! ensure_ddgs_for_web_search; then
+        log_error "ddgs installation failed. web_search backend 'ddgs' will not work."
+        exit 1
+    fi
 
     log_success "All dependencies installed"
+}
+
+ensure_ddgs_for_web_search() {
+    local python_exe=""
+    if [ "$USE_VENV" = true ] && [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        python_exe="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        python_exe="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        python_exe="$(command -v python)"
+    fi
+
+    if [ -z "$python_exe" ]; then
+        log_warn "Skipping ddgs install check: no Python interpreter found"
+        return 0
+    fi
+
+    if "$python_exe" -c "import ddgs" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log_info "Installing ddgs for web_search backend..."
+    if ! $UV_CMD pip install --python "$python_exe" "ddgs>=9,<10"; then
+        return 1
+    fi
+
+    "$python_exe" -c "import ddgs" >/dev/null 2>&1
 }
 
 setup_path() {

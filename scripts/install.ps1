@@ -1665,10 +1665,50 @@ except Exception:
             }
         }
     }
+
+    Ensure-WebSearchDdgsDependency
     
     Pop-Location
     
     Write-Success "All dependencies installed"
+}
+
+function Ensure-WebSearchDdgsDependency {
+    $pythonExe = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { (& $UvCmd python find $PythonVersion) }
+    if (-not (Test-Path $pythonExe)) {
+        Write-Warn "Skipping ddgs install check: $pythonExe not found"
+        return
+    }
+
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & $pythonExe -c "import ddgs" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+
+    Write-Info "Installing ddgs for web_search backend..."
+    & $UvCmd pip install --python $pythonExe "ddgs>=9,<10"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install ddgs (required for web_search backend 'ddgs')."
+    }
+
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & $pythonExe -c "import ddgs" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "ddgs was installed but import still fails in $pythonExe."
+        }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+
+    Write-Success "ddgs ready for web_search backend"
 }
 
 function Set-PathVariable {

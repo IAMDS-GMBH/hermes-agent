@@ -602,14 +602,19 @@ def _pip_install(
     Returns the ``subprocess.CompletedProcess`` from whichever tier succeeded
     (or the last failure for the caller to inspect).
     """
-    venv_root = Path(sys.executable).parent.parent
-    uv_env = {**os.environ, "VIRTUAL_ENV": str(venv_root)}
+    # Always target the interpreter Hermes is actually running under.
+    # VIRTUAL_ENV alone is not sufficient when the process Python and the
+    # active venv differ (e.g. Tauri-spawned subprocesses that pick up a
+    # system Python 3.9 from the environment).  Passing --python explicitly
+    # pins uv to the right interpreter regardless of VIRTUAL_ENV.
+    python_exe = sys.executable
+    uv_env = {**os.environ, "VIRTUAL_ENV": str(Path(python_exe).parent.parent)}
 
     uv_bin = shutil.which("uv")
     if uv_bin:
         try:
             result = subprocess.run(
-                [uv_bin, "pip", "install", *args],
+                [uv_bin, "pip", "install", "--python", python_exe, *args],
                 capture_output=capture_output, text=True, timeout=timeout,
                 env=uv_env,
             )
@@ -620,7 +625,7 @@ def _pip_install(
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    pip_cmd = [sys.executable, "-m", "pip"]
+    pip_cmd = [python_exe, "-m", "pip"]
     try:
         # Probe for pip; bootstrap via ensurepip if missing (uv venv lacks it).
         probe = subprocess.run(
@@ -632,7 +637,7 @@ def _pip_install(
     except (subprocess.TimeoutExpired, FileNotFoundError):
         try:
             subprocess.run(
-                [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
+                [python_exe, "-m", "ensurepip", "--upgrade", "--default-pip"],
                 capture_output=True, text=True, timeout=120, check=True,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
