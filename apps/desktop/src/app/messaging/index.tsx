@@ -518,6 +518,8 @@ const PLATFORM_INTRO: Record<string, string> = {
     'In Home Assistant, open your profile and create a long-lived access token. Paste it here along with your HA URL.',
   email:
     'Use a dedicated mailbox. For Gmail/Workspace, create an app password and use imap.gmail.com / smtp.gmail.com.',
+  outlook:
+    'Create an Azure AD app with Mail.Read and Mail.Send application permissions, grant admin consent, then set tenant/client/secret and mailbox.',
   sms: 'Get your Twilio Account SID and Auth Token from the Twilio console, plus a phone number that can send SMS.',
   dingtalk: 'Create a DingTalk app in the developer console, then copy the Client ID (App key) and Client Secret here.',
   feishu:

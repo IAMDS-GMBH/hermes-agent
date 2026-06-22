@@ -46,6 +46,7 @@ const PLATFORM_ICONS: Record<string, PlatformIconSpec> = {
   bluebubbles: { Icon: SiApple, color: '#0BD318', kind: 'brand' },
   homeassistant: { Icon: SiHomeassistant, color: '#18BCF2', kind: 'brand' },
   email: { Icon: SiGmail, color: '#EA4335', kind: 'brand' },
+  outlook: { color: '#0078D4', kind: 'brand', monogram: 'O' },
   sms: { Icon: MessageSquareText, color: '#F43F5E', kind: 'generic' },
   webhook: { Icon: LinkIcon, color: '#71717A', kind: 'generic' },
   api_server: { Icon: Globe, color: '#64748B', kind: 'generic' },
