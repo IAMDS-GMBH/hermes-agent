@@ -1874,10 +1874,9 @@ function Apply-BootstrapCredentials {
                 $mcpServerUrl = $env:HERMES_BOOTSTRAP_MEMORY_API_URL.TrimEnd('/')
             }
 
-            # Exact 2-space prefix (mirrors sed '^  provider: ' / '^  base_url: ')
-            # so only the model-section keys are replaced, not deeper-nested keys
-            # like skills.litellm_hub.base_url (4-space) which would break their
-            # YAML structure and overwrite localhost:4000 with the gateway URL.
+            # Exact 2-space prefix so only model-section keys are replaced here.
+            # skills.litellm_hub.base_url (4-space) is handled separately in
+            # Ensure-BootstrapToolConfig which reads HERMES_BOOTSTRAP_BASE_URL directly.
             $config = $config -replace '(?m)^  provider:.*$', '  provider: openai-api'
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '(?m)^  base_url:.*$', "  base_url: $escapedUrl"
@@ -2103,7 +2102,7 @@ function Ensure-BootstrapToolConfig {
     if (Test-Path $venvPython) { $pythonCmd = $venvPython }
 
     $pythonScript = @"
-import sys
+import os, sys
 import yaml
 
 path = sys.argv[1]
@@ -2129,7 +2128,13 @@ platform_toolsets["cli"] = cli_toolsets
 
 skills = data.setdefault("skills", {})
 litellm_hub = skills.setdefault("litellm_hub", {})
-if not litellm_hub.get("base_url"):
+# Use the installer-supplied base URL for the hub when available.
+# resolve_litellm_hub_settings() strips a trailing /v1 automatically,
+# so passing the full OpenAI-API-compatible URL here is correct.
+bootstrap_base = os.environ.get("HERMES_BOOTSTRAP_BASE_URL", "").strip()
+if bootstrap_base:
+    litellm_hub["base_url"] = bootstrap_base
+elif not litellm_hub.get("base_url"):
     litellm_hub["base_url"] = "http://localhost:4000"
 litellm_hub.setdefault("api_key", "")
 litellm_hub.setdefault("timeout", 20)
