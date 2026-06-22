@@ -1854,7 +1854,9 @@ function Apply-BootstrapCredentials {
     if (Test-Path $configPath) {
         $config = Get-Content $configPath -Raw -Encoding UTF8
         if (-not [string]::IsNullOrWhiteSpace($bootstrapModel)) {
-            $config = $config -replace '(?m)^\s+default:.*$', "  default: $bootstrapModel"
+            # Use exactly 2-space prefix (mirrors sed '^  default: ') so deeper
+            # keys like litellm_hub.base_url (4-space) are never matched.
+            $config = $config -replace '(?m)^  default:.*$', "  default: $bootstrapModel"
         }
 
         # Replace model.base_url from base URL root
@@ -1872,9 +1874,13 @@ function Apply-BootstrapCredentials {
                 $mcpServerUrl = $env:HERMES_BOOTSTRAP_MEMORY_API_URL.TrimEnd('/')
             }
 
-            $config = $config -replace '(?m)^\s+provider:.*$', '  provider: openai-api'
+            # Exact 2-space prefix (mirrors sed '^  provider: ' / '^  base_url: ')
+            # so only the model-section keys are replaced, not deeper-nested keys
+            # like skills.litellm_hub.base_url (4-space) which would break their
+            # YAML structure and overwrite localhost:4000 with the gateway URL.
+            $config = $config -replace '(?m)^  provider:.*$', '  provider: openai-api'
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
-            $config = $config -replace '(?m)^\s+base_url:.*$', "  base_url: $escapedUrl"
+            $config = $config -replace '(?m)^  base_url:.*$', "  base_url: $escapedUrl"
 
             # Upsert mcp_servers.memory with Bearer auth using API key.
             # Keep other existing MCP servers untouched.
