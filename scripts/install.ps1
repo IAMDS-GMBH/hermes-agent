@@ -319,7 +319,7 @@ function Install-AgentBrowser {
 # ============================================================================
 
 function Install-Uv {
-    # Hermes owns its own uv at $HermesHome\bin\uv.exe.  Always install there —
+    # Hermes owns its own uv at $HermesHome\bin\uv.exe.  Always install there -
     # no PATH probing, no conda guards, no multi-location resolution chains.
     # The runtime update path (hermes_cli/managed_uv.py) looks in the same
     # place, so install.ps1 and `hermes update` stay in sync.
@@ -380,7 +380,7 @@ function Sync-EnvPath {
 # prior process is not visible here.  Later stages (Test-Python,
 # Install-Venv, Install-Dependencies, Install-PlatformSdks) call this
 # at the top to populate $script:UvCmd from the managed location.
-# Throws if uv is not findable — the caller's stage then surfaces a
+# Throws if uv is not findable - the caller's stage then surfaces a
 # clean error via the stage-driver's try/catch.
 function Resolve-UvCmd {
     # Already resolved (default invocation path: Install-Uv ran earlier
@@ -396,7 +396,7 @@ function Resolve-UvCmd {
         # Stale; fall through to re-discover.
     }
 
-    # Check the managed location first — this is where Install-Uv puts it.
+    # Check the managed location first - this is where Install-Uv puts it.
     $managedUv = Join-Path $HermesHome "bin\uv.exe"
     if (Test-Path $managedUv) {
         $script:UvCmd = $managedUv
@@ -1754,7 +1754,7 @@ function Set-PathVariable {
 function Write-BootstrapMarker {
     # Writes $InstallDir\.hermes-bootstrap-complete which tells the Hermes
     # desktop app (apps/desktop/electron/main.cjs) "install.ps1 ran
-    # successfully — DON'T trigger the legacy first-launch bootstrap
+    # successfully - DON'T trigger the legacy first-launch bootstrap
     # runner."
     #
     # Schema mirrors what main.cjs's writeBootstrapMarker() / isBootstrap
@@ -1775,7 +1775,7 @@ function Write-BootstrapMarker {
     # Resolve the pinned commit: explicit -Commit wins, otherwise read
     # the checkout's HEAD via git. If git can't run, leave commit empty
     # and the marker will fail desktop validation (pinnedCommit.length
-    # >= 7) — better to be invalid than wrong.
+    # >= 7) - better to be invalid than wrong.
     $pinnedCommit = $Commit
     if (-not $pinnedCommit) {
         # PS 5.1 doesn't support the ?. null-conditional operator, so
@@ -1790,7 +1790,7 @@ function Write-BootstrapMarker {
                     $pinnedCommit = $resolved.Trim()
                 }
             } catch {
-                # Ignore — pinnedCommit stays empty, marker stays invalid,
+                # Ignore - pinnedCommit stays empty, marker stays invalid,
                 # desktop falls through to its legacy bootstrap path.
             } finally {
                 Pop-Location
@@ -1809,7 +1809,7 @@ function Write-BootstrapMarker {
         pinnedCommit  = $pinnedCommit
         pinnedBranch  = $pinnedBranch
         completedAt   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        # desktopVersion field intentionally omitted — only the desktop
+        # desktopVersion field intentionally omitted - only the desktop
         # app knows its own version, and the marker validator doesn't
         # require it. The desktop fills it in if/when it writes its
         # own marker (e.g. after a future in-app upgrade).
@@ -1818,7 +1818,7 @@ function Write-BootstrapMarker {
 
     # Write WITHOUT a UTF-8 BOM. PowerShell 5.1's `Set-Content -Encoding UTF8`
     # always emits a BOM, and Node's plain JSON.parse rejects the BOM as an
-    # unexpected character — so a BOM'd marker would silently fail the
+    # unexpected character - so a BOM'd marker would silently fail the
     # desktop's readJson(), make isBootstrapComplete() return null, and the
     # desktop would re-run the legacy bootstrap runner anyway. Defeats the
     # whole point. Use the .NET API directly for BOM-less UTF-8.
@@ -1842,7 +1842,7 @@ function Apply-BootstrapCredentials {
     $bootstrapImapServer = $env:HERMES_BOOTSTRAP_IMAP_SERVER
     $bootstrapSmtpServer = $env:HERMES_BOOTSTRAP_SMTP_SERVER
 
-    # If no API key provided, skip — use interactive mode or defaults
+    # If no API key provided, skip - use interactive mode or defaults
     if ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
         return
     }
@@ -1980,7 +1980,7 @@ if "# Custom: pin openai-api" not in src:
 # Patch _save_provider_models_cache: strip copilot and re-pin openai-api on every write
 old_save = (
     'def _save_provider_models_cache(data: dict) -> None:\n'
-    '    """Persist the cache dict. Best-effort — silent on any error."""\n'
+    '    """Persist the cache dict. Best-effort \u2014 silent on any error."""\n'
     '    try:\n'
     '        from utils import atomic_json_write\n\n'
     '        path = _provider_models_cache_path()\n'
@@ -1991,7 +1991,7 @@ old_save = (
 )
 new_save = (
     'def _save_provider_models_cache(data: dict) -> None:\n'
-    '    """Persist the cache dict. Best-effort — silent on any error."""\n'
+    '    """Persist the cache dict. Best-effort \u2014 silent on any error."""\n'
     '    try:\n'
     '        from utils import atomic_json_write\n\n'
     '        # Custom: never persist copilot; always pin openai-api.\n'
@@ -2025,7 +2025,7 @@ print("models.py patched")
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success "Patched models.py to pin openai-api and suppress copilot"
                 } else {
-                    Write-Warning "models.py patch exited with code $LASTEXITCODE — model list may not be pinned"
+                    Write-Warning "models.py patch exited with code $LASTEXITCODE - model list may not be pinned"
                 }
             } finally {
                 Remove-Item $tempScript -ErrorAction SilentlyContinue
@@ -2079,7 +2079,7 @@ print("model_switch.py patched")
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success "Patched model_switch.py to suppress copilot from picker"
                 } else {
-                    Write-Warning "model_switch.py patch exited with code $LASTEXITCODE — copilot suppression may not be active"
+                    Write-Warning "model_switch.py patch exited with code $LASTEXITCODE - copilot suppression may not be active"
                 }
             } finally {
                 Remove-Item $tempScript -ErrorAction SilentlyContinue
@@ -2299,14 +2299,14 @@ You are Hermes, an AI agent originally developed by Nous Research and extended a
 
 - You are running inside the IAMDS internal tooling stack.
 - The underlying model infrastructure is managed by IAMDS GmbH via a LiteLLM proxy.
-- When users ask about Hermes, clarify that this is the IAMDS-customized version — not the vanilla Nous Research release.
+- When users ask about Hermes, clarify that this is the IAMDS-customized version - not the vanilla Nous Research release.
 - IAMDS GmbH is a German company. Users may speak to you in German, English, or Spanish. Always respond in the language the user is writing in.
 
 ## Behavior
 
 - Be concise, direct, and professional.
 - Avoid unnecessary filler phrases.
-- When speaking (voice mode), use short natural sentences — avoid bullet points, markdown, or lists in spoken responses.
+- When speaking (voice mode), use short natural sentences - avoid bullet points, markdown, or lists in spoken responses.
 - You are aware of the IAMDS product suite, which includes tools built on top of Azure, OpenAI, and Anthropic APIs.
 "@
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -2342,7 +2342,7 @@ function Install-NodeDeps {
         # Cross-process driver mode (Hermes-Setup.exe runs each -Stage NAME
         # in a fresh powershell.exe) means $script:HasNode set by Stage-Node
         # in the previous process isn't visible here. Re-probe rather than
-        # trust the stale global — Stage-Node already ran successfully or
+        # trust the stale global - Stage-Node already ran successfully or
         # the bootstrap would've aborted, so npm is reachable.
         if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
             Write-Info "Skipping Node.js dependencies (Node not installed)"
@@ -2626,7 +2626,7 @@ function Install-Desktop {
     #
     # The Tauri bootstrap installer's launch_hermes_desktop command
     # resolves apps/desktop/release/win-unpacked/Hermes.exe directly,
-    # so an "unpacked" build (electron-builder --dir) is enough — we
+    # so an "unpacked" build (electron-builder --dir) is enough - we
     # don't need to produce an NSIS/MSI artifact here.
 
     # Always re-resolve Node here. Stages run in separate PowerShell processes,
@@ -2680,7 +2680,7 @@ function Install-Desktop {
         #
         # The streaming sink in bootstrap.rs's run_install_script
         # captures every stdout/stderr line as it's emitted, so we don't
-        # need a side TEMP log file — the installer's bootstrap log
+        # need a side TEMP log file - the installer's bootstrap log
         # IS the artifact a support engineer reads.
         #
         # Prefer `npm ci`: it wipes node_modules and reinstalls from the
@@ -2761,7 +2761,7 @@ function Install-Desktop {
     # NOT signing the output. Combined with signAndEditExecutable=false in
     # apps/desktop/package.json's build.win block, electron-builder never
     # invokes signtool and therefore never fetches/extracts winCodeSign
-    # (whose macOS symlinks crash 7-Zip on non-admin Windows — a dead end we
+    # (whose macOS symlinks crash 7-Zip on non-admin Windows - a dead end we
     # are NOT trying to work around). The Hermes icon + product name are
     # stamped onto Hermes.exe by our own rcedit step (Set-DesktopExeIdentity)
     # AFTER this build, completely decoupled from electron-builder signing.
@@ -2801,7 +2801,7 @@ function Install-Desktop {
         }
         # Still failing and the user hasn't pinned their own mirror: GitHub's
         # Electron release host is likely blocked/throttled (the repeating
-        # "retrying" log). Retry once via npmmirror.com — the de-facto Electron
+        # "retrying" log). Retry once via npmmirror.com - the de-facto Electron
         # community mirror (Alibaba). @electron/get SHASUM-checks the download,
         # but the SHASUMS come from the same mirror, so that guards against a
         # corrupt/partial download, NOT a compromised mirror: an explicit trust
@@ -2835,7 +2835,7 @@ function Install-Desktop {
         Pop-Location
         throw
     } finally {
-        # Restore env to whatever the caller had — don't leak our
+        # Restore env to whatever the caller had - don't leak our
         # signing-off override into anything install.ps1 invokes later
         # (Stage-PlatformSdks, etc.).
         $env:CSC_IDENTITY_AUTO_DISCOVERY = $prevCSCAuto
@@ -2866,7 +2866,7 @@ function Install-Desktop {
 
     # 3b. The Hermes icon + identity are stamped onto Hermes.exe by the
     #     electron-builder `afterPack` hook (apps/desktop/scripts/after-pack.cjs)
-    #     during `npm run pack` above — for every build, so the installer's
+    #     during `npm run pack` above - for every build, so the installer's
     #     --update rebuild stays branded too. No separate stamp step needed here.
     #     electron-builder's own rcedit step stays disabled (signAndEditExecutable
     #     =false) because enabling it drags in signtool -> winCodeSign -> the
@@ -2875,7 +2875,7 @@ function Install-Desktop {
     # 4. Create Start Menu + Desktop shortcuts pointing DIRECTLY at the packed
     #    Hermes.exe. We deliberately do NOT point them at `hermes desktop`: that
     #    command rebuilds (npm install + electron-builder) on every launch,
-    #    which would cost minutes each time. The packed exe is the consumer —
+    #    which would cost minutes each time. The packed exe is the consumer -
     #    launching it directly is instant, and updates flow through the
     #    installer's --update path (which rebuilds once, then relaunches).
     New-DesktopShortcuts -TargetExe $desktopExe
@@ -2931,11 +2931,11 @@ function New-DesktopShortcuts {
         # cached bitmap. Critical on the --update path: the exe was re-stamped
         # with the Hermes icon, but without this the shortcut can keep drawing
         # the old Electron icon until the user manually refreshes / reboots.
-        # Best-effort and silent — never fail the install over a cosmetic cache.
+        # Best-effort and silent - never fail the install over a cosmetic cache.
         try {
             & ie4uinit.exe -show 2>$null
         } catch {
-            # ie4uinit may be absent/renamed on some SKUs — ignore.
+            # ie4uinit may be absent/renamed on some SKUs - ignore.
         }
     } catch {
         Write-Warn "Skipping shortcut creation: $($_.Exception.Message)"
