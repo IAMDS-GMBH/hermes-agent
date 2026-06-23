@@ -78,6 +78,8 @@ export function HubView({ ...props }: HubViewProps) {
   const [skills, setSkills] = useState<LiteLLMSkill[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
+  const [installing, setInstalling] = useState<{ id: string; skill: LiteLLMSkill } | null>(null)
+  const [installProgress, setInstallProgress] = useState<string>('')
 
   // Refresh handlers
   const refresh = async () => {
@@ -125,6 +127,31 @@ export function HubView({ ...props }: HubViewProps) {
       console.error('[Hub] load error:', message)
       setError(message)
       notifyError(err, `Failed to load ${mode}`)
+    }
+  }
+
+  const handleInstallSkill = async (skill: LiteLLMSkill) => {
+    setInstalling({ id: skill.id, skill })
+    setInstallProgress('Starting installation...')
+
+    try {
+      setInstallProgress('Downloading skill from GitHub...')
+      const result = await requestGateway<{ success: boolean; message: string }>('litellm_hub.skill_install', {
+        skill_id: skill.id,
+        skill_name: skill.name,
+        source: skill.source
+      })
+
+      if (result?.success) {
+        setInstallProgress(`✓ Successfully installed: ${skill.name}`)
+        setTimeout(() => setInstalling(null), 2000)
+      } else {
+        setInstallProgress(`✗ Installation failed: ${result?.message || 'Unknown error'}`)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setInstallProgress(`✗ Error: ${message}`)
+      notifyError(err, `Failed to install ${skill.name}`)
     }
   }
 
@@ -202,8 +229,10 @@ export function HubView({ ...props }: HubViewProps) {
         ) : mode === 'agents' ? (
           <AgentsList agents={filteredAgentsList || []} query={query} />
         ) : (
-          <SkillsList skills={filteredSkillsList || []} query={query} />
+          <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} />
         )}
+        
+        {installing && <SkillInstallModal skill={installing.skill} progress={installProgress} />}
       </PageSearchShell>
     </section>
   )
@@ -250,9 +279,10 @@ function AgentsList({ agents, query }: AgentsListProps) {
 interface SkillsListProps {
   skills: LiteLLMSkill[]
   query: string
+  onInstall?: (skill: LiteLLMSkill) => void
 }
 
-function SkillsList({ skills, query }: SkillsListProps) {
+function SkillsList({ skills, query, onInstall }: SkillsListProps) {
   return (
     <div className="overflow-y-auto flex-1">
       {skills.length === 0 ? (
@@ -281,11 +311,40 @@ function SkillsList({ skills, query }: SkillsListProps) {
                     </div>
                   )}
                 </div>
+                {onInstall && (
+                  <button
+                    onClick={() => onInstall(skill)}
+                    className="ml-2 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors flex-shrink-0"
+                  >
+                    Install
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+interface SkillInstallModalProps {
+  skill: LiteLLMSkill
+  progress: string
+}
+
+function SkillInstallModal({ skill, progress }: SkillInstallModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-border rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-semibold mb-4">Installing {skill.name}</h2>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded-full bg-blue-500 animate-pulse"></div>
+            <p className="text-sm">{progress}</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

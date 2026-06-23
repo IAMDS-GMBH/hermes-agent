@@ -9741,6 +9741,68 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5029, str(e))
 
 
+@method("litellm_hub.skill_install")
+def _(rid, params: dict) -> dict:
+    """Install a skill from LiteLLM hub by fetching from GitHub."""
+    try:
+       import os
+       from pathlib import Path
+       import requests
+        
+       skill_id = (params.get("skill_id") or "").strip()
+       skill_name = (params.get("skill_name") or "").strip()
+       source = params.get("source", "")
+        
+       if not skill_id or not skill_name or not source:
+           return _err(rid, 5032, "skill_id, skill_name, and source are required")
+        
+       # Parse source - should be like "github:mattpocock/skills"
+       if isinstance(source, str):
+           repo_info = source.replace("github:", "").strip()
+       else:
+           return _err(rid, 5033, "Invalid source format")
+        
+       # Construct GitHub raw content URLs
+       owner, repo = repo_info.split("/", 1) if "/" in repo_info else ("", "")
+       if not owner or not repo:
+           return _err(rid, 5034, f"Invalid GitHub repo format: {repo_info}")
+        
+       # Create ~/.hermes/skills directory if it doesn't exist
+       hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+       skills_dir = hermes_home / "skills"
+        
+       # Try to fetch SKILL.md first to validate the skill exists
+       github_raw_base = f"https://raw.githubusercontent.com/{owner}/{repo}/main/skills/{skill_id}"
+       skill_md_url = f"{github_raw_base}/SKILL.md"
+        
+       try:
+           # Fetch SKILL.md
+           resp = requests.get(skill_md_url, timeout=30)
+           if resp.status_code == 404:
+               return _err(rid, 5035, f"Skill not found at {skill_md_url}")
+           if resp.status_code != 200:
+               return _err(rid, 5036, f"Failed to fetch skill (HTTP {resp.status_code})")
+            
+           # Save skill to ~/.hermes/skills/{skill_id}/
+           skill_install_dir = skills_dir / skill_id
+           skill_install_dir.mkdir(parents=True, exist_ok=True)
+            
+           # Save SKILL.md
+           skill_md_path = skill_install_dir / "SKILL.md"
+           skill_md_path.write_text(resp.text, encoding="utf-8")
+            
+           logging.getLogger(__name__).info(f"[LiteLLM Hub] Installed {skill_name} to {skill_install_dir}")
+           return _ok(rid, {"success": True, "message": f"Successfully installed {skill_name}"})
+       except requests.RequestException as e:
+           return _err(rid, 5037, f"Network error fetching skill: {e}")
+       except Exception as e:
+           logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install failed: {e}")
+           return _err(rid, 5038, f"Installation failed: {e}")
+    except Exception as e:
+       logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install error: {e}")
+       return _err(rid, 5039, str(e))
+
+
 # ---------------------------------------------------------------------------
 # Outlook device code auth
 # ---------------------------------------------------------------------------
