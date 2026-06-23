@@ -77,15 +77,18 @@ export function HubView({ ...props }: HubViewProps) {
   const [agents, setAgents] = useState<LiteLLMAgent[] | null>(null)
   const [skills, setSkills] = useState<LiteLLMSkill[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
 
   // Refresh handlers
   const refresh = async () => {
     setError(null)
+    setResolvedUrl(null)
 
     try {
       if (mode === 'agents') {
         const data = await requestGateway<{ agents: unknown[]; resolved_url?: string }>('litellm_hub.agents', { limit: 100 })
         console.log('[Hub] agents resolved_url:', data?.resolved_url)
+        setResolvedUrl(data?.resolved_url || null)
         const agentsList = (data?.agents || []).map((agent: unknown) => {
           const a = agent as Record<string, unknown>
           return {
@@ -98,6 +101,7 @@ export function HubView({ ...props }: HubViewProps) {
       } else {
         const data = await requestGateway<{ skills: unknown[]; resolved_url?: string }>('litellm_hub.skills', { limit: 100 })
         console.log('[Hub] skills resolved_url:', data?.resolved_url)
+        setResolvedUrl(data?.resolved_url || null)
         const skillsList = (data?.skills || []).map((skill: unknown) => {
           const s = skill as Record<string, unknown>
           return {
@@ -174,6 +178,12 @@ export function HubView({ ...props }: HubViewProps) {
           </>
         }
       >
+        {resolvedUrl && (
+          <div className="px-4 py-2 text-xs text-muted-foreground bg-secondary/50 border-b border-border m-0 font-mono break-all">
+            Fetching from: {resolvedUrl}
+          </div>
+        )}
+
         {error && (
           <div className="px-4 py-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 m-4 rounded">
             {error}
