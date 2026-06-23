@@ -9897,6 +9897,13 @@ def _(rid, params: dict) -> dict:
     if not client_secret:
         return _err(rid, 5031, "client_secret is required (missing from .env or params)")
 
+    resolved_request_body = {
+        "use_saved_env": bool(use_saved_env),
+        "tenant_id": tenant_id,
+        "client_id": client_id,
+        "client_secret": client_secret or "",
+    }
+
     try:
         from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
         import asyncio
@@ -9965,6 +9972,7 @@ def _(rid, params: dict) -> dict:
             "verification_uri": req["verification_uri"],
             "user_code": req["user_code"],
             "expires_in": req["expires_in"],
+            "resolved_request_body": resolved_request_body,
         })
     except Exception as e:
         logging.getLogger(__name__).exception("[Outlook] auth.start failed")

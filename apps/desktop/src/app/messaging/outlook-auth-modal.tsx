@@ -19,6 +19,7 @@ interface OutlookAuthStartResult {
   verification_uri: string
   user_code: string
   expires_in: number
+  resolved_request_body?: Record<string, unknown>
 }
 
 interface OutlookAuthStatusResult {
@@ -111,6 +112,9 @@ export function OutlookAuthModal({
         setRequestDebug(JSON.stringify(requestDebugPayload, null, 2))
 
         const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', requestData)
+        setRequestDebug(
+          JSON.stringify((data.resolved_request_body ?? requestDebugPayload) as Record<string, unknown>, null, 2)
+        )
 
         console.log('[Outlook Auth] Device code received:', {
           request_id: data.request_id,

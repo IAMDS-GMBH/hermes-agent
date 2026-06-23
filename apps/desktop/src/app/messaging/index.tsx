@@ -161,6 +161,16 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     return platforms.find(platform => platform.id === selectedId) || platforms[0] || null
   }, [platforms, selectedId])
 
+  const outlookTenantEdit = (selected ? edits[selected.id]?.OUTLOOK_TENANT_ID : '') || ''
+  const outlookClientEdit = (selected ? edits[selected.id]?.OUTLOOK_CLIENT_ID : '') || ''
+  const outlookSecretEdit = (selected ? edits[selected.id]?.OUTLOOK_CLIENT_SECRET : '') || ''
+  const outlookHasAnyTypedCred = Boolean(
+    outlookTenantEdit.trim() || outlookClientEdit.trim() || outlookSecretEdit.trim()
+  )
+  const outlookHasAllTypedCreds = Boolean(
+    outlookTenantEdit.trim() && outlookClientEdit.trim() && outlookSecretEdit.trim()
+  )
+
   const visiblePlatforms = useMemo(() => {
     if (!platforms) {
       return []
@@ -304,10 +314,10 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                 {selected.id === 'outlook' && (
                   <OutlookAuthModal
                     open={outlookAuthOpen}
-                    tenantId={edits[selected.id]?.OUTLOOK_TENANT_ID || ''}
-                    clientId={edits[selected.id]?.OUTLOOK_CLIENT_ID || ''}
-                    clientSecret={edits[selected.id]?.OUTLOOK_CLIENT_SECRET || ''}
-                    useSavedEnv={!edits[selected.id]?.OUTLOOK_TENANT_ID}
+                    tenantId={outlookTenantEdit}
+                    clientId={outlookClientEdit}
+                    clientSecret={outlookSecretEdit}
+                    useSavedEnv={!outlookHasAnyTypedCred}
                     onComplete={async accessToken => {
                       // Save the refresh token (if available) to .env
                       // For now, just close the modal and refresh
@@ -384,6 +394,18 @@ function PlatformDetail({
   const advancedFields = platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}`
+  const hasOutlookSavedCreds =
+    platform.id === 'outlook' &&
+    platform.env_vars.some(e => e.key === 'OUTLOOK_TENANT_ID' && e.is_set) &&
+    platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_ID' && e.is_set) &&
+    platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_SECRET' && e.is_set)
+  const hasOutlookTypedCreds =
+    platform.id === 'outlook' &&
+    Boolean(
+      (edits.OUTLOOK_TENANT_ID || '').trim() &&
+        (edits.OUTLOOK_CLIENT_ID || '').trim() &&
+        (edits.OUTLOOK_CLIENT_SECRET || '').trim()
+    )
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -515,7 +537,7 @@ function PlatformDetail({
                 onClick={onOutlookAuthStart}
                 size="sm"
                 variant="outline"
-                disabled={hasEdits || !platform.env_vars.some(e => e.key === 'OUTLOOK_TENANT_ID' && e.is_set) || !platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_ID' && e.is_set) || !platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_SECRET' && e.is_set)}
+                disabled={!hasOutlookTypedCreds && !hasOutlookSavedCreds}
               >
                 <ExternalLink className="size-3.5" />
                 Authenticate
