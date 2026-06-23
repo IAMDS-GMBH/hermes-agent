@@ -1746,16 +1746,19 @@ import sys
 path, mcp_url, api_key = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(path, encoding="utf-8").read()
 memory_block = (
-    "  memory:\n"
+    "  companyMemory:\n"
     f"    url: {mcp_url}\n"
     "    headers:\n"
     f"      Authorization: \"Bearer {api_key}\"\n"
+    "    timeout: 180\n"
+    "    connect_timeout: 60\n"
+    "    trusted: true\n"
 )
 
 root = re.search(r"(?ms)^mcp_servers:\n(.*?)(?=^\S|\Z)", text)
 if root:
     body = root.group(1)
-    body = re.sub(r"(?ms)^  memory:\n(?:    .*\n)*", "", body)
+    body = re.sub(r"(?ms)^  (?:memory|companyMemory):\n(?:    .*\n)*", "", body)
     new_root = "mcp_servers:\n" + memory_block + body
     text = text[:root.start()] + new_root + text[root.end():]
 else:

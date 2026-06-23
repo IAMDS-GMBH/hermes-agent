@@ -1881,18 +1881,21 @@ function Apply-BootstrapCredentials {
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '(?m)^  base_url:.*$', "  base_url: $escapedUrl"
 
-            # Upsert mcp_servers.memory with Bearer auth using API key.
+            # Upsert mcp_servers.companyMemory with Bearer auth using API key.
             # Keep other existing MCP servers untouched.
             $memoryEntry = @"
-  memory:
+  companyMemory:
     url: $mcpServerUrl
     headers:
       Authorization: "Bearer $bootstrapApiKey"
+    timeout: 180
+    connect_timeout: 60
+    trusted: true
 "@
             $mcpMatch = [regex]::Match($config, '(?ms)^mcp_servers:\r?\n(.*?)(?=^\S|\z)')
             if ($mcpMatch.Success) {
                 $body = $mcpMatch.Groups[1].Value
-                $body = [regex]::Replace($body, '(?ms)^  memory:\r?\n(?:    .*\r?\n)*', '')
+                $body = [regex]::Replace($body, '(?ms)^  (?:memory|companyMemory):\r?\n(?:    .*\r?\n)*', '')
                 $newRoot = "mcp_servers:`n$memoryEntry$body"
                 $config = $config.Substring(0, $mcpMatch.Index) + $newRoot + $config.Substring($mcpMatch.Index + $mcpMatch.Length)
             } else {
