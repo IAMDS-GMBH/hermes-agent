@@ -56,6 +56,10 @@ export function OutlookAuthModal({
 
   useEffect(() => {
     if (!open) {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
       return
     }
 
@@ -67,7 +71,7 @@ export function OutlookAuthModal({
     setRequestId('')
     setCopied(false)
 
-    // Initiate device code flow via TUI gateway RPC
+    // Initiate device code flow via TUI gateway RPC (only once per open)
     ;(async () => {
       try {
         console.log('[Outlook Auth] Initiating device code flow via gateway RPC:', {
@@ -95,11 +99,24 @@ export function OutlookAuthModal({
         setExpiresIn(data.expires_in)
         setStage('waiting')
 
-        // Start polling for completion
+        // Start polling for completion (use request_id from response, not regenerate)
+        const currentRequestId = data.request_id
+        const pollStartTime = Date.now()
+        const maxPollDuration = (data.expires_in + 30) * 1000 // poll until expiry + 30s buffer
+
         const interval = setInterval(async () => {
+          // Safety: stop polling if we've been polling longer than device code lifetime
+          if (Date.now() - pollStartTime > maxPollDuration) {
+            clearInterval(interval)
+            console.warn('[Outlook Auth] Polling timeout (device code expired)')
+            setStage('error')
+            setError('Device code expired. Please try again.')
+            return
+          }
+
           try {
             const status = await requestGateway<OutlookAuthStatusResult>('outlook.auth.status', {
-              request_id: data.request_id
+              request_id: currentRequestId
             })
             console.log('[Outlook Auth] Poll response:', status)
 
@@ -138,9 +155,10 @@ export function OutlookAuthModal({
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
       }
     }
-  }, [open, tenantId, clientId, clientSecret, onComplete])
+  }, [open]) // Only depend on 'open' to prevent re-initialization
 
   const handleCopyCode = async () => {
     try {
