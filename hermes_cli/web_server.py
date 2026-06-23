@@ -3504,6 +3504,26 @@ _PLATFORM_OVERRIDES: dict[str, dict[str, Any]] = {
         "docs_url": "",
         "required_env": (),
     },
+    "outlook": {
+        "name": "Microsoft Outlook",
+        "description": "Receive and reply to emails via the Microsoft Graph API.",
+        "docs_url": "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps",
+        "env_vars": (
+            "OUTLOOK_TENANT_ID",
+            "OUTLOOK_CLIENT_ID",
+            "OUTLOOK_CLIENT_SECRET",
+            "OUTLOOK_MAILBOX",
+            "OUTLOOK_ALLOWED_USERS",
+            "OUTLOOK_POLL_INTERVAL",
+            "OUTLOOK_HOME_CHANNEL",
+        ),
+        "required_env": (
+            "OUTLOOK_TENANT_ID",
+            "OUTLOOK_CLIENT_ID",
+            "OUTLOOK_CLIENT_SECRET",
+            "OUTLOOK_MAILBOX",
+        ),
+    },
     "api_server": {
         "name": "API server",
         "description": "Expose Hermes as an OpenAI-compatible HTTP API for tools like Open WebUI.",
@@ -3547,6 +3567,7 @@ _PLATFORM_ORDER: tuple[str, ...] = (
     "weixin",
     "qqbot",
     "yuanbao",
+    "outlook",
     "api_server",
     "webhook",
 )
@@ -3683,6 +3704,40 @@ _MESSAGING_ENV_FALLBACKS: dict[str, dict[str, Any]] = {
         "description": "DingTalk client secret (App secret)",
         "prompt": "Client secret",
         "password": True,
+    },
+    "OUTLOOK_TENANT_ID": {
+        "description": "Azure AD tenant ID hosting the app registration",
+        "prompt": "Azure AD Tenant ID",
+        "url": "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview",
+    },
+    "OUTLOOK_CLIENT_ID": {
+        "description": "Azure AD application (client) ID with Mail.Read and Mail.Send permissions",
+        "prompt": "Azure AD Application (Client) ID",
+        "url": "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps",
+    },
+    "OUTLOOK_CLIENT_SECRET": {
+        "description": "Azure AD application client secret",
+        "prompt": "Azure AD Client Secret",
+        "password": True,
+    },
+    "OUTLOOK_MAILBOX": {
+        "description": "UPN or email address of the mailbox to monitor (e.g. agent@company.com)",
+        "prompt": "Mailbox email address",
+    },
+    "OUTLOOK_ALLOWED_USERS": {
+        "description": "Comma-separated sender addresses allowed to trigger the agent (leave empty for all)",
+        "prompt": "Allowed senders",
+        "advanced": True,
+    },
+    "OUTLOOK_POLL_INTERVAL": {
+        "description": "Seconds between inbox checks (default: 30)",
+        "prompt": "Poll interval (seconds)",
+        "advanced": True,
+    },
+    "OUTLOOK_HOME_CHANNEL": {
+        "description": "Sender email for cron / notification delivery",
+        "prompt": "Home channel email",
+        "advanced": True,
     },
 }
 
@@ -4371,6 +4426,14 @@ async def update_messaging_platform(platform_id: str, body: MessagingPlatformUpd
 
         if body.enabled is not None:
             _write_platform_enabled(platform_id, body.enabled)
+        elif body.env and not body.clear_env:
+            # Auto-enable when all required env vars are now satisfied
+            required = set(entry.get("required_env") or ())
+            if required:
+                from hermes_cli.config import get_env_value
+                all_set = all(get_env_value(k) for k in required)
+                if all_set:
+                    _write_platform_enabled(platform_id, True)
 
         return {"ok": True, "platform": platform_id}
     except HTTPException:

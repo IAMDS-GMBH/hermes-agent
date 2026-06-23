@@ -179,6 +179,94 @@ See `hermes claw migrate --help` for all options, or use the `openclaw-migration
 
 ---
 
+## Certificate Setup Guide
+
+To distribute the Hermes installer without security warnings, you need to sign the binary with a trusted certificate. Instructions for both platforms are below.
+
+### macOS — Apple Developer Program
+
+**Requirements:**
+- Enroll in the [Apple Developer Program](https://developer.apple.com/programs/) (~$99/year)
+- A **Developer ID Application** certificate (created via Xcode → Settings → Accounts or Keychain Access)
+- An **App-Specific Password** from [appleid.apple.com](https://appleid.apple.com) → Sign-In and Security → App-Specific Passwords
+
+**Steps:**
+
+1. Export your Developer ID certificate as a `.p12` file with a password
+2. Set the following environment variables before building:
+
+```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export APPLE_CERTIFICATE="$(base64 -i YourCert.p12)"
+export APPLE_CERTIFICATE_PASSWORD="your-p12-password"
+export APPLE_ID="your@apple.id"
+export APPLE_PASSWORD="your-app-specific-password"
+export APPLE_TEAM_ID="YOURTEAMID"
+```
+
+3. Run the Tauri build — Tauri will automatically sign and notarize the app when these variables are present:
+
+```bash
+npm run tauri:build --workspace apps/bootstrap-installer
+```
+
+> The `tauri.conf.json` already has `hardenedRuntime: true` enabled, which is required for notarization.
+
+> **Note:** Notarization is required on macOS 10.15+. Without it, users will see a "cannot be opened" error.
+
+---
+
+### Windows — Azure Artifact Signing (Microsoft Trusted Signing)
+
+Azure Artifact Signing is the recommended approach: no USB hardware token required, CI/CD friendly, and billed per use (~$9.99–$99/month).
+
+**Azure setup:**
+
+1. In the Azure Portal, register the `Microsoft.CodeSigning` resource provider under your subscription
+2. Create an **Artifact Signing Account**, **Identity Validation**, and **Certificate Profile**
+3. Register an app in **Azure Active Directory (Entra ID)** and assign it the `Trusted Signing Certificate Profile Signer` role
+4. Note your **Tenant ID**, **Client ID**, and **Client Secret**
+
+**Install signing tools** (on your Windows build machine):
+
+```powershell
+winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
+dotnet tool install -g --prerelease sign
+```
+
+**Add `signCommand` to `tauri.conf.json`** under `bundle.windows`:
+
+```json
+"bundle": {
+  "windows": {
+    "signCommand": "sign code artifact-signing --timestamp-url http://timestamp.acs.microsoft.com --artifact-signing-endpoint https://eus.codesigning.azure.net/ --artifact-signing-account <YOUR_ACCOUNT> --artifact-signing-certificate-profile <YOUR_PROFILE> $binaryPath"
+  }
+}
+```
+
+**Set environment variables before building:**
+
+```bash
+export AZURE_TENANT_ID="..."
+export AZURE_CLIENT_ID="..."
+export AZURE_CLIENT_SECRET="..."
+```
+
+**GitHub Actions example:**
+
+```yaml
+- name: Build & Sign (Windows)
+  run: npm run tauri:build --workspace apps/bootstrap-installer
+  env:
+    AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+    AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+```
+
+> **Note:** SmartScreen reputation builds organically over time as users download and run the app. This applies to both OV and EV certificates since 2024.
+
+---
+
 ## Contributing
 
 We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.

@@ -3436,7 +3436,9 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> Li
             continue
 
         # Scan tool description for prompt injection patterns
-        _scan_mcp_description(name, mcp_tool.name, mcp_tool.description or "")
+        # Skip scan for servers explicitly marked as trusted in config
+        if not config.get("trusted", False):
+            _scan_mcp_description(name, mcp_tool.name, mcp_tool.description or "")
 
         schema = _convert_mcp_schema(name, mcp_tool)
         tool_name_prefixed = schema["name"]

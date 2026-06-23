@@ -432,6 +432,75 @@ class OutlookAdapter(BasePlatformAdapter):
 # Plugin registration
 # ---------------------------------------------------------------------------
 
+def _outlook_setup() -> None:
+    """Interactive setup: collect Azure AD credentials, save to .env, enable in config."""
+    from hermes_cli.config import (
+        load_config,
+        save_config,
+        save_env_value,
+        get_env_value,
+    )
+
+    print()
+    print("  ─── 📧 Microsoft Outlook (Graph API) Setup ───")
+    print()
+    print("  You will need an Azure AD app registration with:")
+    print("    • Mail.Read  (Application permission)")
+    print("    • Mail.Send  (Application permission)")
+    print("  Docs: https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps")
+    print()
+
+    _VARS = [
+        ("OUTLOOK_TENANT_ID",     "Azure AD Tenant ID",              False),
+        ("OUTLOOK_CLIENT_ID",     "Azure AD Application (Client) ID", False),
+        ("OUTLOOK_CLIENT_SECRET", "Azure AD Client Secret",           True),
+        ("OUTLOOK_MAILBOX",       "Mailbox UPN / email address",      False),
+    ]
+    _OPTIONAL_VARS = [
+        ("OUTLOOK_ALLOWED_USERS",  "Allowed senders (comma-separated, leave empty for all)", False),
+        ("OUTLOOK_POLL_INTERVAL",  "Poll interval in seconds (default: 30)",                 False),
+        ("OUTLOOK_HOME_CHANNEL",   "Home channel email for cron delivery (optional)",        False),
+    ]
+
+    for env_var, prompt_text, is_password in _VARS:
+        existing = get_env_value(env_var)
+        if existing:
+            display = ("*" * 8) if is_password else existing
+            print(f"  {prompt_text}: (current: {display})")
+            answer = input(f"  Leave empty to keep, or enter new value: ").strip()
+        else:
+            if is_password:
+                import getpass
+                answer = getpass.getpass(f"  {prompt_text}: ").strip()
+            else:
+                answer = input(f"  {prompt_text}: ").strip()
+
+        if answer:
+            save_env_value(env_var, answer)
+            print(f"  ✓ Saved {env_var}")
+
+    print()
+    print("  Optional settings (press Enter to skip):")
+    for env_var, prompt_text, is_password in _OPTIONAL_VARS:
+        existing = get_env_value(env_var)
+        display_default = f" (current: {existing})" if existing else ""
+        answer = input(f"  {prompt_text}{display_default}: ").strip()
+        if answer:
+            save_env_value(env_var, answer)
+            print(f"  ✓ Saved {env_var}")
+
+    # Enable the platform in config.yaml
+    config = load_config()
+    if "outlook" not in config:
+        config["outlook"] = {}
+    config["outlook"]["enabled"] = True
+    save_config(config)
+    print()
+    print("  ✓ outlook.enabled = true written to config.yaml")
+    print("  ✓ Outlook setup complete — restart the gateway to connect.")
+    print()
+
+
 def register(ctx: Any) -> None:
     """Register the Outlook platform adapter with the Hermes plugin system."""
     ctx.register_platform(
@@ -445,6 +514,7 @@ def register(ctx: Any) -> None:
         ),
         adapter_factory=OutlookAdapter,
         check_fn=_check_outlook_requirements,
+        setup_fn=_outlook_setup,
         allowed_users_env="OUTLOOK_ALLOWED_USERS",
         allow_all_env="OUTLOOK_ALLOW_ALL_USERS",
         cron_deliver_env_var="OUTLOOK_HOME_CHANNEL",
