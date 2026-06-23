@@ -104,11 +104,18 @@ export function HubView({ ...props }: HubViewProps) {
         setResolvedUrl(data?.resolved_url || null)
         const skillsList = (data?.skills || []).map((skill: unknown) => {
           const s = skill as Record<string, unknown>
+          let sourceStr = undefined
+          if (s.source) {
+            const srcObj = s.source as Record<string, unknown>
+            if (srcObj.source === 'github' && srcObj.repo) {
+              sourceStr = `github:${srcObj.repo}`
+            }
+          }
           return {
             id: String(s.id || s.name || ''),
             name: String(s.name || ''),
             description: s.description ? String(s.description) : undefined,
-            source: s.source ? String(s.source) : undefined
+            source: sourceStr
           }
         })
         setSkills(skillsList)

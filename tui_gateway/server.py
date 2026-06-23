@@ -9713,7 +9713,7 @@ def _(rid, params: dict) -> dict:
         if error:
             return _err(rid, 5026, f"{error} (resolved URL: {resolved_url})")
 
-        agents = data if isinstance(data, list) else (data.get("agents", []) if data else [])
+        agents = data if isinstance(data, list) else (data.get("agents", []) or data.get("plugins", []) if data else [])
         return _ok(rid, {"agents": agents, "resolved_url": resolved_url})
     except Exception as e:
         return _err(rid, 5027, str(e))
@@ -9735,7 +9735,7 @@ def _(rid, params: dict) -> dict:
         if error:
             return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")
 
-        skills = data if isinstance(data, list) else (data.get("skills", []) if data else [])
+        skills = data if isinstance(data, list) else (data.get("skills", []) or data.get("plugins", []) if data else [])
         return _ok(rid, {"skills": skills, "resolved_url": resolved_url})
     except Exception as e:
         return _err(rid, 5029, str(e))
