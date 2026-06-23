@@ -32,6 +32,7 @@ interface OutlookAuthModalProps {
   tenantId: string
   clientId: string
   clientSecret: string
+  useSavedEnv?: boolean
   onComplete: (accessToken: string) => void
   onCancel: () => void
 }
@@ -41,6 +42,7 @@ export function OutlookAuthModal({
   tenantId,
   clientId,
   clientSecret,
+  useSavedEnv = false,
   onComplete,
   onCancel
 }: OutlookAuthModalProps) {
@@ -74,8 +76,8 @@ export function OutlookAuthModal({
     // Initiate device code flow via TUI gateway RPC (only once per open)
     ;(async () => {
       try {
-        // Validate required fields
-        if (!tenantId.trim() || !clientId.trim() || !clientSecret.trim()) {
+        // Validate required fields (skip if using saved env)
+        if (!useSavedEnv && (!tenantId.trim() || !clientId.trim() || !clientSecret.trim())) {
           const missing = []
           if (!tenantId.trim()) missing.push('Tenant ID')
           if (!clientId.trim()) missing.push('Client ID')
@@ -84,16 +86,21 @@ export function OutlookAuthModal({
         }
 
         console.log('[Outlook Auth] Initiating device code flow via gateway RPC:', {
-          tenant_id: tenantId,
-          client_id: clientId,
-          has_secret: !!clientSecret
+          use_saved_env: useSavedEnv,
+          tenant_id: useSavedEnv ? '(from .env)' : tenantId,
+          client_id: useSavedEnv ? '(from .env)' : clientId,
+          has_secret: useSavedEnv ? '(from .env)' : !!clientSecret
         })
 
-        const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', {
-          tenant_id: tenantId,
-          client_id: clientId,
-          client_secret: clientSecret
-        })
+        const requestData = useSavedEnv 
+          ? { use_saved_env: true }
+          : {
+              tenant_id: tenantId,
+              client_id: clientId,
+              client_secret: clientSecret
+            }
+
+        const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', requestData)
 
         console.log('[Outlook Auth] Device code received:', {
           request_id: data.request_id,

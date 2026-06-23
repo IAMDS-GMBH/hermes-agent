@@ -307,6 +307,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                     tenantId={edits[selected.id]?.OUTLOOK_TENANT_ID || ''}
                     clientId={edits[selected.id]?.OUTLOOK_CLIENT_ID || ''}
                     clientSecret={edits[selected.id]?.OUTLOOK_CLIENT_SECRET || ''}
+                    useSavedEnv={!edits[selected.id]?.OUTLOOK_TENANT_ID}
                     onComplete={async accessToken => {
                       // Save the refresh token (if available) to .env
                       // For now, just close the modal and refresh

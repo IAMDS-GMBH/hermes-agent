@@ -9752,12 +9752,21 @@ _outlook_auth_lock = threading.Lock()
 @method("outlook.auth.start")
 def _(rid, params: dict) -> dict:
     """Initiate Outlook device code flow. Returns device code info immediately."""
-    tenant_id = (params.get("tenant_id") or "").strip()
-    client_id = (params.get("client_id") or "").strip()
-    client_secret = (params.get("client_secret") or "").strip() or None
+    use_saved_env = params.get("use_saved_env", False)
+    
+    if use_saved_env:
+        # Read credentials from .env / config
+        import os
+        tenant_id = os.getenv("OUTLOOK_TENANT_ID", "").strip()
+        client_id = os.getenv("OUTLOOK_CLIENT_ID", "").strip()
+        client_secret = os.getenv("OUTLOOK_CLIENT_SECRET", "").strip() or None
+    else:
+        tenant_id = (params.get("tenant_id") or "").strip()
+        client_id = (params.get("client_id") or "").strip()
+        client_secret = (params.get("client_secret") or "").strip() or None
 
     if not tenant_id or not client_id:
-        return _err(rid, 5030, "tenant_id and client_id are required")
+        return _err(rid, 5030, "tenant_id and client_id are required (missing from .env or params)")
 
     try:
         from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
