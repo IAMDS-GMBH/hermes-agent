@@ -232,7 +232,13 @@ export function HubView({ ...props }: HubViewProps) {
           <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} />
         )}
         
-        {installing && <SkillInstallModal skill={installing.skill} progress={installProgress} />}
+        {installing && (
+          <SkillInstallModal
+            skill={installing.skill}
+            progress={installProgress}
+            onClose={() => setInstalling(null)}
+          />
+        )}
       </PageSearchShell>
     </section>
   )
@@ -331,18 +337,31 @@ function SkillsList({ skills, query, onInstall }: SkillsListProps) {
 interface SkillInstallModalProps {
   skill: LiteLLMSkill
   progress: string
+  onClose: () => void
 }
 
-function SkillInstallModal({ skill, progress }: SkillInstallModalProps) {
+function SkillInstallModal({ skill, progress, onClose }: SkillInstallModalProps) {
+  const isDone = progress.startsWith('✓') || progress.startsWith('✗') || progress.startsWith('Error')
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background border border-border rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
         <h2 className="text-lg font-semibold mb-4">Installing {skill.name}</h2>
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-blue-500 animate-pulse"></div>
+            <div className={cn('w-4 h-4 rounded-full', isDone ? 'bg-muted-foreground' : 'bg-blue-500 animate-pulse')}></div>
             <p className="text-sm">{progress}</p>
           </div>
+          {isDone && (
+            <div className="pt-2">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-xs font-medium rounded border border-border hover:bg-accent/40 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

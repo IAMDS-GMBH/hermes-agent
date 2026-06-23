@@ -51,6 +51,7 @@ export function OutlookAuthModal({
   const [userCode, setUserCode] = useState('')
   const [expiresIn, setExpiresIn] = useState(0)
   const [error, setError] = useState('')
+  const [requestDebug, setRequestDebug] = useState('')
   const [requestId, setRequestId] = useState('')
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [copied, setCopied] = useState(false)
@@ -70,6 +71,7 @@ export function OutlookAuthModal({
     setVerificationUri('')
     setUserCode('')
     setError('')
+    setRequestDebug('')
     setRequestId('')
     setCopied(false)
 
@@ -99,6 +101,14 @@ export function OutlookAuthModal({
               client_id: clientId,
               client_secret: clientSecret
             }
+        const requestDebugPayload = useSavedEnv
+          ? { use_saved_env: true }
+          : {
+              tenant_id: tenantId,
+              client_id: clientId,
+              client_secret: clientSecret
+            }
+        setRequestDebug(JSON.stringify(requestDebugPayload, null, 2))
 
         const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', requestData)
 
@@ -148,6 +158,11 @@ export function OutlookAuthModal({
               clearInterval(interval)
               setStage('error')
               setError(status.error || 'Authentication failed')
+              setRequestDebug(prev =>
+                prev
+                  ? `${prev}\n\nstatus_poll_request:\n${JSON.stringify({ request_id: currentRequestId }, null, 2)}`
+                  : JSON.stringify({ status_poll_request: { request_id: currentRequestId } }, null, 2)
+              )
             } else if (status.status === 'expired') {
               console.warn('[Outlook Auth] Device code expired')
               clearInterval(interval)
@@ -248,6 +263,14 @@ export function OutlookAuthModal({
               <div className="rounded-lg bg-destructive/10 p-4 text-destructive">
                 <p className="font-medium">Authentication Error</p>
                 <p className="mt-1 text-sm">{error}</p>
+                {requestDebug && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium uppercase tracking-wide">Request body sent</p>
+                    <pre className="mt-1 overflow-x-auto rounded bg-background/70 p-2 text-xs text-foreground">
+                      {requestDebug}
+                    </pre>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -269,4 +292,3 @@ export function OutlookAuthModal({
     </Dialog>
   )
 }
-

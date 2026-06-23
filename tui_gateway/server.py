@@ -9745,62 +9745,114 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Install a skill from LiteLLM hub by fetching from GitHub."""
     try:
-       import os
-       from pathlib import Path
-       import requests
-        
-       skill_id = (params.get("skill_id") or "").strip()
-       skill_name = (params.get("skill_name") or "").strip()
-       source = params.get("source", "")
-        
-       if not skill_id or not skill_name or not source:
-           return _err(rid, 5032, "skill_id, skill_name, and source are required")
-        
-       # Parse source - should be like "github:mattpocock/skills"
-       if isinstance(source, str):
-           repo_info = source.replace("github:", "").strip()
-       else:
-           return _err(rid, 5033, "Invalid source format")
-        
-       # Construct GitHub raw content URLs
-       owner, repo = repo_info.split("/", 1) if "/" in repo_info else ("", "")
-       if not owner or not repo:
-           return _err(rid, 5034, f"Invalid GitHub repo format: {repo_info}")
-        
-       # Create ~/.hermes/skills directory if it doesn't exist
-       hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
-       skills_dir = hermes_home / "skills"
-        
-       # Try to fetch SKILL.md first to validate the skill exists
-       github_raw_base = f"https://raw.githubusercontent.com/{owner}/{repo}/main/skills/{skill_id}"
-       skill_md_url = f"{github_raw_base}/SKILL.md"
-        
-       try:
-           # Fetch SKILL.md
-           resp = requests.get(skill_md_url, timeout=30)
-           if resp.status_code == 404:
-               return _err(rid, 5035, f"Skill not found at {skill_md_url}")
-           if resp.status_code != 200:
-               return _err(rid, 5036, f"Failed to fetch skill (HTTP {resp.status_code})")
-            
-           # Save skill to ~/.hermes/skills/{skill_id}/
-           skill_install_dir = skills_dir / skill_id
-           skill_install_dir.mkdir(parents=True, exist_ok=True)
-            
-           # Save SKILL.md
-           skill_md_path = skill_install_dir / "SKILL.md"
-           skill_md_path.write_text(resp.text, encoding="utf-8")
-            
-           logging.getLogger(__name__).info(f"[LiteLLM Hub] Installed {skill_name} to {skill_install_dir}")
-           return _ok(rid, {"success": True, "message": f"Successfully installed {skill_name}"})
-       except requests.RequestException as e:
-           return _err(rid, 5037, f"Network error fetching skill: {e}")
-       except Exception as e:
-           logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install failed: {e}")
-           return _err(rid, 5038, f"Installation failed: {e}")
+        import requests
+        from urllib.parse import urlparse
+
+        from hermes_constants import get_hermes_home
+
+        skill_id = (params.get("skill_id") or "").strip()
+        skill_name = (params.get("skill_name") or "").strip()
+        source = params.get("source", "")
+
+        if not skill_id or not skill_name or not source:
+            return _err(rid, 5032, "skill_id, skill_name, and source are required")
+        if not isinstance(source, str):
+            return _err(rid, 5033, "Invalid source format")
+
+        source_raw = source.strip()
+        repo_info = ""
+
+        # Accept:
+        # - github:owner/repo
+        # - owner/repo
+        # - https://github.com/owner/repo[/...]
+        # - https://raw.githubusercontent.com/owner/repo/<branch>/...
+        if source_raw.startswith("github:"):
+            repo_info = source_raw.replace("github:", "", 1).strip()
+        elif source_raw.startswith("http://") or source_raw.startswith("https://"):
+            parsed = urlparse(source_raw)
+            host = (parsed.netloc or "").lower()
+            parts = [p for p in parsed.path.strip("/").split("/") if p]
+            if host in {"github.com", "www.github.com"} and len(parts) >= 2:
+                repo_info = f"{parts[0]}/{parts[1].replace('.git', '')}"
+            elif host == "raw.githubusercontent.com" and len(parts) >= 2:
+                repo_info = f"{parts[0]}/{parts[1].replace('.git', '')}"
+            elif host.endswith("githubusercontent.com") and len(parts) >= 2:
+                # Defensive fallback for malformed "githubusercontent.com" source values.
+                repo_info = f"{parts[0]}/{parts[1].replace('.git', '')}"
+        else:
+            repo_info = source_raw
+
+        owner, repo = repo_info.split("/", 1) if "/" in repo_info else ("", "")
+        owner = owner.strip()
+        repo = repo.strip().replace(".git", "")
+        if not owner or not repo:
+            return _err(rid, 5034, f"Invalid GitHub repo format: {source_raw}")
+
+        skills_dir = get_hermes_home() / "skills"
+        skill_path = skill_id.strip("/")
+        skill_path_no_prefix = (
+            skill_path[len("skills/") :] if skill_path.startswith("skills/") else skill_path
+        )
+
+        url_candidates = [
+            f"https://raw.githubusercontent.com/{owner}/{repo}/main/skills/{skill_path_no_prefix}/SKILL.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/master/skills/{skill_path_no_prefix}/SKILL.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/main/{skill_path_no_prefix}/SKILL.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/master/{skill_path_no_prefix}/SKILL.md",
+        ]
+
+        try:
+            last_status = None
+            skill_md_url = ""
+            resp = None
+            for candidate in url_candidates:
+                skill_md_url = candidate
+                resp = requests.get(skill_md_url, timeout=30)
+                last_status = resp.status_code
+                if resp.status_code == 200:
+                    break
+                if resp.status_code not in (404, 301, 302):
+                    return _err(
+                        rid,
+                        5036,
+                        f"Failed to fetch skill (HTTP {resp.status_code}) from {skill_md_url}",
+                    )
+
+            if resp is None or resp.status_code != 200:
+                return _err(
+                    rid,
+                    5035,
+                    f"Skill not found. Tried: {', '.join(url_candidates)} (last HTTP {last_status})",
+                )
+
+            skill_install_dir = skills_dir / skill_path_no_prefix
+            skill_install_dir.mkdir(parents=True, exist_ok=True)
+            skill_md_path = skill_install_dir / "SKILL.md"
+            skill_md_path.write_text(resp.text, encoding="utf-8")
+
+            logging.getLogger(__name__).info(
+                "[LiteLLM Hub] Installed %s from %s to %s",
+                skill_name,
+                skill_md_url,
+                skill_install_dir,
+            )
+            return _ok(
+                rid,
+                {
+                    "success": True,
+                    "message": f"Successfully installed {skill_name}",
+                    "resolved_url": skill_md_url,
+                },
+            )
+        except requests.RequestException as e:
+            return _err(rid, 5037, f"Network error fetching skill: {e}")
+        except Exception as e:
+            logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install failed: {e}")
+            return _err(rid, 5038, f"Installation failed: {e}")
     except Exception as e:
-       logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install error: {e}")
-       return _err(rid, 5039, str(e))
+        logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install error: {e}")
+        return _err(rid, 5039, str(e))
 
 
 # ---------------------------------------------------------------------------
