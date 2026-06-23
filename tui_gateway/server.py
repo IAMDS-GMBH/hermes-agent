@@ -9755,8 +9755,20 @@ def _(rid, params: dict) -> dict:
     use_saved_env = params.get("use_saved_env", False)
     
     if use_saved_env:
-        # Read credentials from .env / config
+        # Load .env file and read credentials
         import os
+        from pathlib import Path
+        try:
+            from dotenv import load_dotenv
+        except ImportError:
+            load_dotenv = None
+        
+        hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+        env_path = hermes_home / ".env"
+        
+        if load_dotenv and env_path.exists():
+            load_dotenv(str(env_path), override=True, encoding="utf-8")
+        
         tenant_id = os.getenv("OUTLOOK_TENANT_ID", "").strip()
         client_id = os.getenv("OUTLOOK_CLIENT_ID", "").strip()
         client_secret = os.getenv("OUTLOOK_CLIENT_SECRET", "").strip() or None
@@ -9767,6 +9779,9 @@ def _(rid, params: dict) -> dict:
 
     if not tenant_id or not client_id:
         return _err(rid, 5030, "tenant_id and client_id are required (missing from .env or params)")
+    
+    if not client_secret:
+        return _err(rid, 5031, "client_secret is required (missing from .env or params)")
 
     try:
         from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
