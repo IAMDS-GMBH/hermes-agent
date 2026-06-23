@@ -1,0 +1,217 @@
+import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Copy, ExternalLink, Loader2 } from '@/lib/icons'
+import { notify, notifyError } from '@/store/notifications'
+import { cn } from '@/lib/utils'
+
+interface OutlookAuthModalProps {
+  open: boolean
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  onComplete: (accessToken: string) => void
+  onCancel: () => void
+}
+
+export function OutlookAuthModal({
+  open,
+  tenantId,
+  clientId,
+  clientSecret,
+  onComplete,
+  onCancel
+}: OutlookAuthModalProps) {
+  const [stage, setStage] = useState<'initiating' | 'waiting' | 'success' | 'error'>('initiating')
+  const [verificationUri, setVerificationUri] = useState('')
+  const [userCode, setUserCode] = useState('')
+  const [expiresIn, setExpiresIn] = useState(0)
+  const [error, setError] = useState('')
+  const [requestId, setRequestId] = useState('')
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    // Reset state when modal opens
+    setStage('initiating')
+    setVerificationUri('')
+    setUserCode('')
+    setError('')
+    setRequestId('')
+    setCopied(false)
+
+    // Initiate device code flow
+    ;(async () => {
+      try {
+        const response = await fetch('/api/messaging/outlook/authenticate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            client_id: clientId,
+            client_secret: clientSecret || undefined
+          })
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.detail || 'Failed to initiate authentication')
+        }
+
+        const data = await response.json()
+        setRequestId(data.request_id)
+        setVerificationUri(data.verification_uri)
+        setUserCode(data.user_code)
+        setExpiresIn(data.expires_in)
+        setStage('waiting')
+
+        // Start polling for completion
+        const interval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/messaging/outlook/authenticate/${data.request_id}`)
+            if (!statusResponse.ok) {
+              throw new Error('Failed to check status')
+            }
+
+            const status = await statusResponse.json()
+
+            if (status.status === 'success') {
+              clearInterval(interval)
+              setStage('success')
+              setTimeout(() => {
+                onComplete(status.access_token)
+              }, 1000)
+            } else if (status.status === 'error') {
+              clearInterval(interval)
+              setStage('error')
+              setError(status.error || 'Authentication failed')
+            } else if (status.status === 'expired') {
+              clearInterval(interval)
+              setStage('error')
+              setError('Device code expired. Please try again.')
+            }
+          } catch (err) {
+            console.error('[Outlook Auth] Poll error:', err)
+          }
+        }, 2000)
+
+        pollIntervalRef.current = interval
+      } catch (err) {
+        setStage('error')
+        setError(err instanceof Error ? err.message : 'Failed to initiate authentication')
+      }
+    })()
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
+  }, [open, tenantId, clientId, clientSecret, onComplete])
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(userCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+      notify({ kind: 'success', title: 'Code copied', message: 'Device code copied to clipboard' })
+    } catch (err) {
+      notifyError(err, 'Failed to copy code')
+    }
+  }
+
+  const handleOpenBrowser = () => {
+    window.open(verificationUri, '_blank')
+  }
+
+  return (
+    <Dialog open={open && stage !== 'success'} onOpenChange={open => !open && onCancel()}>
+      <DialogContent showCloseButton={stage !== 'waiting'}>
+        <DialogHeader>
+          <DialogTitle>
+            {stage === 'initiating' && 'Initiating Outlook Authentication'}
+            {stage === 'waiting' && 'Complete Outlook Authentication'}
+            {stage === 'error' && 'Authentication Failed'}
+          </DialogTitle>
+        </DialogHeader>
+
+        <DialogDescription asChild>
+          <div className="space-y-4">
+            {stage === 'initiating' && (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Preparing authentication...</span>
+              </div>
+            )}
+
+            {stage === 'waiting' && (
+              <>
+                <p>1. Click the button below to open Microsoft login in your browser</p>
+                <Button onClick={handleOpenBrowser} className="w-full" variant="default">
+                  <ExternalLink className="size-4" />
+                  Open Microsoft Login
+                </Button>
+
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="mb-2 text-sm font-medium">2. Enter this code when prompted:</p>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={userCode}
+                      className="font-mono text-lg font-bold tracking-widest"
+                    />
+                    <Button
+                      onClick={handleCopyCode}
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Code expires in {Math.ceil(expiresIn / 60)} minutes. Waiting for completion...
+                </p>
+              </>
+            )}
+
+            {stage === 'error' && (
+              <div className="rounded-lg bg-destructive/10 p-4 text-destructive">
+                <p className="font-medium">Authentication Error</p>
+                <p className="mt-1 text-sm">{error}</p>
+              </div>
+            )}
+          </div>
+        </DialogDescription>
+
+        <DialogFooter>
+          {stage === 'error' && (
+            <Button variant="outline" onClick={onCancel}>
+              Close
+            </Button>
+          )}
+          {stage !== 'error' && stage !== 'success' && (
+            <Button variant="outline" onClick={onCancel} disabled={stage === 'waiting'}>
+              Cancel
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

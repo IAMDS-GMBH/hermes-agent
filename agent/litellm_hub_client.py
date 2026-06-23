@@ -114,7 +114,7 @@ def fetch_litellm_hub_json(
         headers["Authorization"] = f"Bearer {api_key}"
 
     public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
-    url = f"{base_url}/public/{public_endpoint}"
+    url = f"{base_url}/litellm/public/{public_endpoint}"
     try:
         resp = httpx.get(
             url,

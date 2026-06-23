@@ -118,6 +118,10 @@ def _strip_html(text: str) -> str:
 
 
 def _check_outlook_requirements() -> bool:
+    auth_mode = os.getenv("OUTLOOK_AUTH_MODE", "app").lower().strip()
+    if auth_mode == "delegated":
+        # Delegated mode needs tenant + client ID (+ secret if available)
+        return bool(os.getenv("OUTLOOK_TENANT_ID") and os.getenv("OUTLOOK_CLIENT_ID"))
     return all([
         os.getenv("OUTLOOK_TENANT_ID"),
         os.getenv("OUTLOOK_CLIENT_ID"),
@@ -164,44 +168,80 @@ class OutlookAdapter(BasePlatformAdapter):
         self._poll_task: Optional[asyncio.Task] = None
         self._graph: Optional[Any] = None  # MicrosoftGraphClient
 
+    @property
+    def _mailbox_root(self) -> str:
+        """Graph API path prefix for the active mailbox.
+        Delegated auth uses /me; app-only uses /users/{address}.
+        """
+        if self._mailbox == "me":
+            return "/me"
+        return f"/users/{self._mailbox}"
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        if not all([self._tenant_id, self._client_id, self._client_secret, self._mailbox]):
-            self._set_fatal_error(
-                "MISSING_CREDENTIALS",
-                "OUTLOOK_TENANT_ID, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, "
-                "and OUTLOOK_MAILBOX are all required.",
-                retryable=False,
-            )
-            return False
+        auth_mode = os.getenv("OUTLOOK_AUTH_MODE", "app").lower().strip()
+        extra = self._config.extra or {}
 
-        try:
-            from tools.microsoft_graph_auth import GraphCredentials, MicrosoftGraphTokenProvider
-            from tools.microsoft_graph_client import MicrosoftGraphClient
-
-            creds = GraphCredentials(
-                tenant_id=self._tenant_id,
-                client_id=self._client_id,
-                client_secret=self._client_secret,
-            )
-            provider = MicrosoftGraphTokenProvider(creds)
-            self._graph = MicrosoftGraphClient(provider, user_agent="Hermes-Outlook/1.0")
-
-            # Verify token + mailbox access
-            await self._graph.get_json(
-                f"/users/{self._mailbox}/mailFolders/inbox",
-            )
-        except Exception as exc:
-            self._set_fatal_error(
-                "CONNECT_FAILED",
-                f"Outlook Graph connection failed: {exc}",
-                retryable=True,
-            )
-            logger.error("[Outlook] Connection failed: %s", exc)
-            return False
+        if auth_mode == "delegated":
+            if not all([self._tenant_id, self._client_id]):
+                self._set_fatal_error(
+                    "MISSING_CREDENTIALS",
+                    "OUTLOOK_TENANT_ID and OUTLOOK_CLIENT_ID are required for delegated auth.",
+                    retryable=False,
+                )
+                return False
+            try:
+                from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
+                creds = GraphDelegatedCredentials(
+                    tenant_id=self._tenant_id,
+                    client_id=self._client_id,
+                    client_secret=self._client_secret,  # Include secret if provided
+                )
+                provider = GraphDeviceCodeProvider(creds)
+                from tools.microsoft_graph_client import MicrosoftGraphClient
+                self._graph = MicrosoftGraphClient(provider, user_agent="Hermes-Outlook/1.0")
+                # Use /me for delegated — mailbox is the signed-in user
+                self._mailbox = "me"
+                await self._graph.get_json("/me/mailFolders/inbox")
+            except Exception as exc:
+                self._set_fatal_error(
+                    "CONNECT_FAILED",
+                    f"Outlook delegated auth failed: {exc}",
+                    retryable=True,
+                )
+                logger.error("[Outlook] Delegated auth connection failed: %s", exc)
+                return False
+        else:
+            if not all([self._tenant_id, self._client_id, self._client_secret, self._mailbox]):
+                self._set_fatal_error(
+                    "MISSING_CREDENTIALS",
+                    "OUTLOOK_TENANT_ID, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, "
+                    "and OUTLOOK_MAILBOX are all required for app-only auth.",
+                    retryable=False,
+                )
+                return False
+            try:
+                from tools.microsoft_graph_auth import GraphCredentials, MicrosoftGraphTokenProvider
+                from tools.microsoft_graph_client import MicrosoftGraphClient
+                creds = GraphCredentials(
+                    tenant_id=self._tenant_id,
+                    client_id=self._client_id,
+                    client_secret=self._client_secret,
+                )
+                provider = MicrosoftGraphTokenProvider(creds)
+                self._graph = MicrosoftGraphClient(provider, user_agent="Hermes-Outlook/1.0")
+                await self._graph.get_json(f"{self._mailbox_root}/mailFolders/inbox")
+            except Exception as exc:
+                self._set_fatal_error(
+                    "CONNECT_FAILED",
+                    f"Outlook Graph connection failed: {exc}",
+                    retryable=True,
+                )
+                logger.error("[Outlook] Connection failed: %s", exc)
+                return False
 
         # Seed seen IDs from existing unread messages so we don't replay history
         try:
@@ -267,7 +307,7 @@ class OutlookAdapter(BasePlatformAdapter):
             return []
         try:
             data = await self._graph.get_json(
-                f"/users/{self._mailbox}/mailFolders/inbox/messages",
+                f"{self._mailbox_root}/mailFolders/inbox/messages",
                 params={
                     "$filter": "isRead eq false",
                     "$orderby": "receivedDateTime asc",
@@ -299,8 +339,8 @@ class OutlookAdapter(BasePlatformAdapter):
         sender_addr = _extract_sender_address(sender_field)
         sender_name = _extract_sender_name(sender_field)
 
-        # Skip self-messages
-        if sender_addr == self._mailbox:
+        # Skip self-messages (only meaningful in app-only mode where mailbox is an email address)
+        if self._mailbox != "me" and sender_addr == self._mailbox:
             return
 
         # Skip automated senders
@@ -365,7 +405,7 @@ class OutlookAdapter(BasePlatformAdapter):
             return
         try:
             await self._graph.patch_json(
-                f"/users/{self._mailbox}/messages/{graph_message_id}",
+                f"{self._mailbox_root}/messages/{graph_message_id}",
                 json_body={"isRead": True},
             )
         except Exception as exc:
@@ -409,7 +449,7 @@ class OutlookAdapter(BasePlatformAdapter):
             message["conversationId"] = conversation_id
 
         await self._graph.post_json(
-            f"/users/{self._mailbox}/sendMail",
+            f"{self._mailbox_root}/sendMail",
             json_body={"message": message, "saveToSentItems": True},
         )
         logger.info("[Outlook] Sent reply to %s (subject: %s)", to_addr, subject)

@@ -650,6 +650,12 @@ class MessagingPlatformUpdate(BaseModel):
     clear_env: List[str] = []
 
 
+class OutlookAuthStart(BaseModel):
+    tenant_id: str
+    client_id: str
+    client_secret: Optional[str] = None
+
+
 class TelegramOnboardingStart(BaseModel):
     bot_name: Optional[str] = None
 
@@ -4516,6 +4522,112 @@ async def test_messaging_platform(platform_id: str):
         "state": payload["state"],
         "message": "Setup looks complete, but the gateway has not reported a connection yet. Restart the gateway.",
     }
+
+
+# Store device code auth requests temporarily
+_OUTLOOK_AUTH_REQUESTS: Dict[str, Dict[str, Any]] = {}
+
+
+async def _outlook_device_code_callback(request_id: str, verification_uri: str, user_code: str, expires_in: int) -> None:
+    """Callback invoked when device code is available."""
+    _OUTLOOK_AUTH_REQUESTS[request_id] = {
+    "verification_uri": verification_uri,
+    "user_code": user_code,
+    "expires_in": expires_in,
+    "status": "pending",
+    "expires_at": time.time() + expires_in,
+    }
+
+
+@app.post("/api/messaging/outlook/authenticate")
+async def outlook_authenticate_start(body: OutlookAuthStart):
+    """Initiate Outlook device code authentication flow."""
+    try:
+    from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
+    import uuid
+        
+    request_id = str(uuid.uuid4())
+        
+    creds = GraphDelegatedCredentials(
+        tenant_id=body.tenant_id.strip(),
+        client_id=body.client_id.strip(),
+        client_secret=body.client_secret.strip() if body.client_secret else None,
+    )
+        
+    # Create callback that stores device code info
+    async def callback(verification_uri: str, user_code: str, expires_in: int) -> None:
+        await _outlook_device_code_callback(request_id, verification_uri, user_code, expires_in)
+        
+    provider = GraphDeviceCodeProvider(creds, device_code_callback=callback)
+        
+    # Spawn background task to run device code flow
+    async def run_auth_flow():
+        try:
+            token = await provider.get_access_token()
+            _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "success"
+            _OUTLOOK_AUTH_REQUESTS[request_id]["access_token"] = token
+        except Exception as exc:
+            _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "error"
+            _OUTLOOK_AUTH_REQUESTS[request_id]["error"] = str(exc)
+            logger.error("[Outlook] Device code auth failed: %s", exc)
+        
+    # Schedule the task (non-blocking)
+    asyncio.create_task(run_auth_flow())
+        
+    # Wait a moment for callback to store device code info
+    await asyncio.sleep(0.1)
+        
+    if request_id not in _OUTLOOK_AUTH_REQUESTS:
+        raise HTTPException(
+            status_code=500,
+            detail="Device code callback did not store request info",
+        )
+        
+    req = _OUTLOOK_AUTH_REQUESTS[request_id]
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "verification_uri": req["verification_uri"],
+        "user_code": req["user_code"],
+        "expires_in": req["expires_in"],
+    }
+    except HTTPException:
+    raise
+    except Exception as exc:
+    logger.exception("[Outlook] Device code auth initiation failed")
+    raise HTTPException(status_code=500, detail=f"Authentication failed: {str(exc)}")
+
+
+@app.get("/api/messaging/outlook/authenticate/{request_id}")
+async def outlook_authenticate_status(request_id: str):
+    """Poll for device code authentication completion."""
+    if request_id not in _OUTLOOK_AUTH_REQUESTS:
+    raise HTTPException(status_code=404, detail="Request not found")
+    
+    req = _OUTLOOK_AUTH_REQUESTS[request_id]
+    
+    # Clean up expired requests
+    if time.time() > req.get("expires_at", 0) and req["status"] == "pending":
+    req["status"] = "expired"
+    
+    status = req["status"]
+    
+    if status == "pending":
+    return {"ok": False, "status": "pending"}
+    elif status == "success":
+    # Return access token and clean up
+    token = req.get("access_token", "")
+    del _OUTLOOK_AUTH_REQUESTS[request_id]
+    return {"ok": True, "status": "success", "access_token": token}
+    elif status == "error":
+    error = req.get("error", "Unknown error")
+    del _OUTLOOK_AUTH_REQUESTS[request_id]
+    return {"ok": False, "status": "error", "error": error}
+    elif status == "expired":
+    del _OUTLOOK_AUTH_REQUESTS[request_id]
+    return {"ok": False, "status": "expired", "error": "Device code expired"}
+    
+    return {"ok": False, "status": "unknown"}
 
 
 # ---------------------------------------------------------------------------

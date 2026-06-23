@@ -26,6 +26,7 @@ import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
+import { OutlookAuthModal } from './outlook-auth-modal'
 
 interface MessagingViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
@@ -102,6 +103,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [outlookAuthOpen, setOutlookAuthOpen] = useState(false)
   const platformIds = useMemo(() => platforms?.map(p => p.id) ?? [], [platforms])
   const [selectedId, setSelectedId] = useRouteEnumParam('platform', platformIds, platformIds[0] ?? '')
 
@@ -280,23 +282,41 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
           <main className="min-h-0 overflow-hidden">
             {selected && (
-              <PlatformDetail
-                edits={edits[selected.id] || {}}
-                onClear={key => void handleClear(selected, key)}
-                onEdit={(key, value) =>
-                  setEdits(current => ({
-                    ...current,
-                    [selected.id]: {
-                      ...(current[selected.id] || {}),
-                      [key]: value
-                    }
-                  }))
-                }
-                onSave={() => void handleSave(selected)}
-                onToggle={enabled => void handleToggle(selected, enabled)}
-                platform={selected}
-                saving={saving}
-              />
+              <>
+                <PlatformDetail
+                  edits={edits[selected.id] || {}}
+                  onClear={key => void handleClear(selected, key)}
+                  onEdit={(key, value) =>
+                    setEdits(current => ({
+                      ...current,
+                      [selected.id]: {
+                        ...(current[selected.id] || {}),
+                        [key]: value
+                      }
+                    }))
+                  }
+                  onSave={() => void handleSave(selected)}
+                  onToggle={enabled => void handleToggle(selected, enabled)}
+                  platform={selected}
+                  saving={saving}
+                  onOutlookAuthStart={() => setOutlookAuthOpen(true)}
+                />
+                {selected.id === 'outlook' && (
+                  <OutlookAuthModal
+                    open={outlookAuthOpen}
+                    tenantId={edits[selected.id]?.OUTLOOK_TENANT_ID || ''}
+                    clientId={edits[selected.id]?.OUTLOOK_CLIENT_ID || ''}
+                    clientSecret={edits[selected.id]?.OUTLOOK_CLIENT_SECRET || ''}
+                    onComplete={async accessToken => {
+                      // Save the refresh token (if available) to .env
+                      // For now, just close the modal and refresh
+                      setOutlookAuthOpen(false)
+                      await refreshPlatforms()
+                    }}
+                    onCancel={() => setOutlookAuthOpen(false)}
+                  />
+                )}
+              </>
             )}
           </main>
         </div>
@@ -341,7 +361,8 @@ function PlatformDetail({
   onSave,
   onToggle,
   platform,
-  saving
+  saving,
+  onOutlookAuthStart
 }: {
   edits: Record<string, string>
   onClear: (key: string) => void
@@ -350,6 +371,7 @@ function PlatformDetail({
   onToggle: (enabled: boolean) => void
   platform: MessagingPlatformInfo
   saving: string | null
+  onOutlookAuthStart?: () => void
 }) {
   const { t } = useI18n()
   const m = t.messaging
@@ -487,6 +509,17 @@ function PlatformDetail({
 
           <div className="ml-auto flex items-center gap-2">
             {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
+            {platform.id === 'outlook' && onOutlookAuthStart && (
+              <Button
+                onClick={onOutlookAuthStart}
+                size="sm"
+                variant="outline"
+                disabled={!edits.OUTLOOK_TENANT_ID || !edits.OUTLOOK_CLIENT_ID}
+              >
+                <ExternalLink className="size-3.5" />
+                Authenticate
+              </Button>
+            )}
             <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
               <Save />
               {isSavingEnv ? m.saving : m.saveChanges}
