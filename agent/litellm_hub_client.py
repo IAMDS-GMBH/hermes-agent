@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _HUB_PATH_ALIASES = {
     "agents": "agent_hub",
@@ -99,11 +102,13 @@ def fetch_litellm_hub_json(
     timeout = settings.get("timeout", 20)
 
     if not base_url:
+        logger.warning("[LiteLLMHub] base_url is not configured")
         return None, (
             "LiteLLM hub is not configured. "
             "Set skills.litellm_hub.base_url in config.yaml."
         )
     if require_auth and not api_key:
+        logger.warning("[LiteLLMHub] api_key is required but not configured")
         return None, (
             "This LiteLLM hub endpoint requires authentication. "
             "Set skills.litellm_hub.api_key (or LITELLM_KEY)."
@@ -115,6 +120,7 @@ def fetch_litellm_hub_json(
 
     public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
     url = f"{base_url}/litellm/public/{public_endpoint}"
+    logger.info("[LiteLLMHub] Fetching %s (auth=%s)", url, bool(api_key))
     try:
         resp = httpx.get(
             url,
@@ -123,16 +129,21 @@ def fetch_litellm_hub_json(
             follow_redirects=True,
         )
     except httpx.HTTPError as exc:
+        logger.error("[LiteLLMHub] Request failed for %s: %s", url, exc)
         return None, f"Failed to reach LiteLLM hub at {url}: {exc}"
 
+    logger.info("[LiteLLMHub] Response from %s: HTTP %s", url, resp.status_code)
     if resp.status_code == 401:
-        return None, "LiteLLM hub request failed: unauthorized (401). Check API key."
+        return None, f"LiteLLM hub request failed: unauthorized (401) at {url}. Check API key."
     if resp.status_code == 403:
-        return None, "LiteLLM hub request failed: forbidden (403). Check API key scope."
+        return None, f"LiteLLM hub request failed: forbidden (403) at {url}. Check API key scope."
     if resp.status_code != 200:
         return None, f"LiteLLM hub request failed: HTTP {resp.status_code} from {url}."
 
     try:
-        return resp.json(), None
+        data = resp.json()
+        logger.info("[LiteLLMHub] Successfully parsed JSON from %s", url)
+        return data, None
     except ValueError:
+        logger.error("[LiteLLMHub] Non-JSON response from %s: %.200s", url, resp.text)
         return None, f"LiteLLM hub returned non-JSON response from {url}."

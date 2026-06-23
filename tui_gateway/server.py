@@ -176,6 +176,8 @@ _LONG_HANDLERS = frozenset(
     {
         "browser.manage",
         "cli.exec",
+        "outlook.auth.start",
+        "outlook.auth.status",
         "plugins.manage",
         "session.branch",
         "session.compress",
@@ -9699,14 +9701,16 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Fetch LiteLLM Agent Hub entries."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_hub_json
+        from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
 
-        data, error = fetch_litellm_hub_json("agent_hub", require_auth=False)
+        settings = resolve_litellm_hub_settings()
+        resolved_url = f"{settings.get('base_url', '(not set)')}/litellm/public/agent_hub"
+        data, error = fetch_litellm_hub_json("agent_hub", require_auth=False, settings=settings)
         if error:
-            return _err(rid, 5026, error)
+            return _err(rid, 5026, f"{error} (resolved URL: {resolved_url})")
 
         agents = data if isinstance(data, list) else (data.get("agents", []) if data else [])
-        return _ok(rid, {"agents": agents})
+        return _ok(rid, {"agents": agents, "resolved_url": resolved_url})
     except Exception as e:
         return _err(rid, 5027, str(e))
 
@@ -9715,16 +9719,145 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Fetch LiteLLM Skill Hub entries."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_hub_json
+        from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
 
-        data, error = fetch_litellm_hub_json("skill_hub", require_auth=False)
+        settings = resolve_litellm_hub_settings()
+        resolved_url = f"{settings.get('base_url', '(not set)')}/litellm/public/skill_hub"
+        data, error = fetch_litellm_hub_json("skill_hub", require_auth=False, settings=settings)
         if error:
-            return _err(rid, 5028, error)
+            return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")
 
         skills = data if isinstance(data, list) else (data.get("skills", []) if data else [])
-        return _ok(rid, {"skills": skills})
+        return _ok(rid, {"skills": skills, "resolved_url": resolved_url})
     except Exception as e:
         return _err(rid, 5029, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Outlook device code auth
+# ---------------------------------------------------------------------------
+
+_outlook_auth_requests: dict[str, dict] = {}
+_outlook_auth_lock = threading.Lock()
+
+
+@method("outlook.auth.start")
+def _(rid, params: dict) -> dict:
+    """Initiate Outlook device code flow. Returns device code info immediately."""
+    tenant_id = (params.get("tenant_id") or "").strip()
+    client_id = (params.get("client_id") or "").strip()
+    client_secret = (params.get("client_secret") or "").strip() or None
+
+    if not tenant_id or not client_id:
+        return _err(rid, 5030, "tenant_id and client_id are required")
+
+    try:
+        from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
+        import asyncio
+
+        request_id = str(uuid.uuid4())
+        result_event = threading.Event()
+
+        creds = GraphDelegatedCredentials(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+
+        def sync_callback(verification_uri: str, user_code: str, expires_in: int) -> None:
+            with _outlook_auth_lock:
+                _outlook_auth_requests[request_id] = {
+                    "status": "pending",
+                    "verification_uri": verification_uri,
+                    "user_code": user_code,
+                    "expires_in": expires_in,
+                    "expires_at": time.time() + expires_in,
+                }
+            result_event.set()
+
+        async def async_callback(verification_uri: str, user_code: str, expires_in: int) -> None:
+            sync_callback(verification_uri, user_code, expires_in)
+
+        provider = GraphDeviceCodeProvider(creds, device_code_callback=async_callback)
+
+        def run_auth_flow():
+            loop = asyncio.new_event_loop()
+            try:
+                token = loop.run_until_complete(provider.get_access_token())
+                with _outlook_auth_lock:
+                    if request_id in _outlook_auth_requests:
+                        _outlook_auth_requests[request_id]["status"] = "success"
+                        _outlook_auth_requests[request_id]["access_token"] = token
+                    else:
+                        _outlook_auth_requests[request_id] = {"status": "success", "access_token": token}
+            except Exception as exc:
+                logging.getLogger(__name__).error("[Outlook] Device code auth failed: %s", exc)
+                with _outlook_auth_lock:
+                    if request_id in _outlook_auth_requests:
+                        _outlook_auth_requests[request_id]["status"] = "error"
+                        _outlook_auth_requests[request_id]["error"] = str(exc)
+                    else:
+                        _outlook_auth_requests[request_id] = {"status": "error", "error": str(exc)}
+                result_event.set()
+            finally:
+                loop.close()
+
+        threading.Thread(target=run_auth_flow, daemon=True, name=f"outlook-auth-{request_id[:8]}").start()
+
+        # Wait up to 15s for the device code callback to fire
+        if not result_event.wait(timeout=15):
+            return _err(rid, 5031, "Timed out waiting for Microsoft device code response. Check tenant_id and client_id.")
+
+        with _outlook_auth_lock:
+            req = _outlook_auth_requests.get(request_id, {})
+
+        if req.get("status") == "error":
+            return _err(rid, 5032, req.get("error", "Device code request failed"))
+
+        return _ok(rid, {
+            "request_id": request_id,
+            "verification_uri": req["verification_uri"],
+            "user_code": req["user_code"],
+            "expires_in": req["expires_in"],
+        })
+    except Exception as e:
+        logging.getLogger(__name__).exception("[Outlook] auth.start failed")
+        return _err(rid, 5033, str(e))
+
+
+@method("outlook.auth.status")
+def _(rid, params: dict) -> dict:
+    """Poll for Outlook device code auth completion."""
+    request_id = (params.get("request_id") or "").strip()
+    if not request_id:
+        return _err(rid, 5034, "request_id is required")
+
+    with _outlook_auth_lock:
+        req = _outlook_auth_requests.get(request_id)
+
+    if req is None:
+        return _err(rid, 5035, "Unknown request_id")
+
+    # Auto-expire
+    if req["status"] == "pending" and time.time() > req.get("expires_at", 0):
+        with _outlook_auth_lock:
+            if request_id in _outlook_auth_requests:
+                _outlook_auth_requests[request_id]["status"] = "expired"
+        return _ok(rid, {"status": "expired"})
+
+    status = req["status"]
+    if status == "success":
+        token = req.get("access_token", "")
+        with _outlook_auth_lock:
+            _outlook_auth_requests.pop(request_id, None)
+        return _ok(rid, {"status": "success", "access_token": token})
+    if status == "error":
+        error = req.get("error", "Unknown error")
+        with _outlook_auth_lock:
+            _outlook_auth_requests.pop(request_id, None)
+        return _ok(rid, {"status": "error", "error": error})
+
+    return _ok(rid, {"status": status})
 
 
 @method("plugins.manage")

@@ -84,7 +84,8 @@ export function HubView({ ...props }: HubViewProps) {
 
     try {
       if (mode === 'agents') {
-        const data = await requestGateway<{ agents: unknown[] }>('litellm_hub.agents', { limit: 100 })
+        const data = await requestGateway<{ agents: unknown[]; resolved_url?: string }>('litellm_hub.agents', { limit: 100 })
+        console.log('[Hub] agents resolved_url:', data?.resolved_url)
         const agentsList = (data?.agents || []).map((agent: unknown) => {
           const a = agent as Record<string, unknown>
           return {
@@ -95,7 +96,8 @@ export function HubView({ ...props }: HubViewProps) {
         })
         setAgents(agentsList)
       } else {
-        const data = await requestGateway<{ skills: unknown[] }>('litellm_hub.skills', { limit: 100 })
+        const data = await requestGateway<{ skills: unknown[]; resolved_url?: string }>('litellm_hub.skills', { limit: 100 })
+        console.log('[Hub] skills resolved_url:', data?.resolved_url)
         const skillsList = (data?.skills || []).map((skill: unknown) => {
           const s = skill as Record<string, unknown>
           return {
@@ -109,6 +111,7 @@ export function HubView({ ...props }: HubViewProps) {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error('[Hub] load error:', message)
       setError(message)
       notifyError(err, `Failed to load ${mode}`)
     }

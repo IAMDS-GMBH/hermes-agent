@@ -12,6 +12,20 @@ import {
 import { Copy, ExternalLink, Loader2 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 import { cn } from '@/lib/utils'
+import { useGatewayRequest } from '../gateway/hooks/use-gateway-request'
+
+interface OutlookAuthStartResult {
+  request_id: string
+  verification_uri: string
+  user_code: string
+  expires_in: number
+}
+
+interface OutlookAuthStatusResult {
+  status: 'pending' | 'success' | 'error' | 'expired'
+  access_token?: string
+  error?: string
+}
 
 interface OutlookAuthModalProps {
   open: boolean
@@ -38,6 +52,7 @@ export function OutlookAuthModal({
   const [requestId, setRequestId] = useState('')
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [copied, setCopied] = useState(false)
+  const { requestGateway } = useGatewayRequest()
 
   useEffect(() => {
     if (!open) {
@@ -52,40 +67,21 @@ export function OutlookAuthModal({
     setRequestId('')
     setCopied(false)
 
-    // Initiate device code flow
+    // Initiate device code flow via TUI gateway RPC
     ;(async () => {
       try {
-        console.log('[Outlook Auth] Initiating device code flow with:', {
+        console.log('[Outlook Auth] Initiating device code flow via gateway RPC:', {
           tenant_id: tenantId,
           client_id: clientId,
           has_secret: !!clientSecret
         })
 
-        const response = await fetch('/api/messaging/outlook/authenticate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tenant_id: tenantId,
-            client_id: clientId,
-            client_secret: clientSecret || undefined
-          })
+        const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', {
+          tenant_id: tenantId,
+          client_id: clientId,
+          client_secret: clientSecret || undefined
         })
 
-        console.log('[Outlook Auth] Initial response status:', response.status)
-
-        if (!response.ok) {
-          let errorDetail = 'Failed to initiate authentication'
-          try {
-            const errorData = await response.json()
-            errorDetail = errorData.detail || JSON.stringify(errorData)
-          } catch {
-            errorDetail = `HTTP ${response.status}: ${response.statusText}`
-          }
-          console.error('[Outlook Auth] Initial fetch error:', errorDetail)
-          throw new Error(errorDetail)
-        }
-
-        const data = await response.json()
         console.log('[Outlook Auth] Device code received:', {
           request_id: data.request_id,
           verification_uri: data.verification_uri,
@@ -102,14 +98,9 @@ export function OutlookAuthModal({
         // Start polling for completion
         const interval = setInterval(async () => {
           try {
-            const statusResponse = await fetch(`/api/messaging/outlook/authenticate/${data.request_id}`)
-            
-            if (!statusResponse.ok) {
-              console.error('[Outlook Auth] Poll error, status:', statusResponse.status)
-              throw new Error(`Poll failed: HTTP ${statusResponse.status}`)
-            }
-
-            const status = await statusResponse.json()
+            const status = await requestGateway<OutlookAuthStatusResult>('outlook.auth.status', {
+              request_id: data.request_id
+            })
             console.log('[Outlook Auth] Poll response:', status)
 
             if (status.status === 'success') {
@@ -117,10 +108,10 @@ export function OutlookAuthModal({
               clearInterval(interval)
               setStage('success')
               setTimeout(() => {
-                onComplete(status.access_token)
+                onComplete(status.access_token ?? '')
               }, 1000)
             } else if (status.status === 'error') {
-              console.error('[Outlook Auth] Backend reported error:', status.error)
+              console.error('[Outlook Auth] Backend error:', status.error)
               clearInterval(interval)
               setStage('error')
               setError(status.error || 'Authentication failed')
