@@ -43,10 +43,7 @@ _HERMES_CORE_TOOLS = [
     # Skills
     "skills_list", "skill_view", "skill_manage",
     # Browser automation
-    "browser_navigate", "browser_snapshot", "browser_click",
-    "browser_type", "browser_scroll", "browser_back",
-    "browser_press", "browser_get_images",
-    "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+    # (disabled — browser tools removed from core toolset)
     # Text-to-speech
     "text_to_speech",
     # Planning & memory
@@ -171,14 +168,8 @@ TOOLSETS = {
     },
     
     "browser": {
-        "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click) with web search for finding URLs",
-        "tools": [
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp",
-            "browser_dialog", "web_search"
-        ],
+        "description": "Browser automation (disabled)",
+        "tools": [],
         "includes": []
     },
     
@@ -345,22 +336,17 @@ TOOLSETS = {
     # for while pairing on code and drops the rest (messaging, tts, image_gen,
     # spotify, home-assistant, cron, computer-use).
     "coding": {
-        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
+        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision",
         "tools": [
             "web_search", "web_extract",
             "terminal", "process", "read_terminal",
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
             "session_search", "clarify",
             "execute_code", "delegate_task",
         ],
-        "includes": [],
         # Posture toolset: selected per-session by agent/coding_context.py,
         # never auto-recovered into per-platform tool config (see the
         # non-configurable-toolset recovery loop in hermes_cli/tools_config.py).
@@ -382,10 +368,6 @@ TOOLSETS = {
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
             "session_search",
             "execute_code", "delegate_task",
@@ -406,11 +388,6 @@ TOOLSETS = {
             "vision_analyze", "image_generate",
             # Skills
             "skills_list", "skill_view", "skill_manage",
-            # Browser automation
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             # Planning & memory
             "todo", "memory",
             # Session history search
