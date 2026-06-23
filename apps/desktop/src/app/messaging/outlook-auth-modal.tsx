@@ -74,6 +74,15 @@ export function OutlookAuthModal({
     // Initiate device code flow via TUI gateway RPC (only once per open)
     ;(async () => {
       try {
+        // Validate required fields
+        if (!tenantId.trim() || !clientId.trim() || !clientSecret.trim()) {
+          const missing = []
+          if (!tenantId.trim()) missing.push('Tenant ID')
+          if (!clientId.trim()) missing.push('Client ID')
+          if (!clientSecret.trim()) missing.push('Client Secret')
+          throw new Error(`Missing required fields: ${missing.join(', ')}`)
+        }
+
         console.log('[Outlook Auth] Initiating device code flow via gateway RPC:', {
           tenant_id: tenantId,
           client_id: clientId,
@@ -83,7 +92,7 @@ export function OutlookAuthModal({
         const data = await requestGateway<OutlookAuthStartResult>('outlook.auth.start', {
           tenant_id: tenantId,
           client_id: clientId,
-          client_secret: clientSecret || undefined
+          client_secret: clientSecret
         })
 
         console.log('[Outlook Auth] Device code received:', {
