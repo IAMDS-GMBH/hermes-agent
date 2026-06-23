@@ -1667,6 +1667,7 @@ except Exception:
     }
 
     Ensure-WebSearchDdgsDependency
+    Ensure-OfficeDocumentDependencies
     
     Pop-Location
     
@@ -1709,6 +1710,47 @@ function Ensure-WebSearchDdgsDependency {
     }
 
     Write-Success "ddgs ready for web_search backend"
+}
+
+function Ensure-OfficeDocumentDependencies {
+    # Requested by desktop bootstrap users: make Word/PowerPoint helper skills
+    # usable immediately in the installer-created virtualenv.
+    if ($NoVenv) {
+        Write-Info "Skipping office dependency check (-NoVenv)"
+        return
+    }
+
+    $pythonExe = "$InstallDir\venv\Scripts\python.exe"
+    if (-not (Test-Path $pythonExe)) {
+        Write-Warn "Skipping office dependency check: $pythonExe not found"
+        return
+    }
+
+    $deps = @(
+        @{ Import = "docx";      Spec = "python-docx>=1,<2";           Label = "Word (.docx)" },
+        @{ Import = "pptx";      Spec = "python-pptx>=1,<2";           Label = "PowerPoint (.pptx)" },
+        @{ Import = "markitdown";Spec = "markitdown[pptx]>=0.1,<1";    Label = "Office text extraction" },
+        @{ Import = "PIL";       Spec = "Pillow>=10,<12";              Label = "PowerPoint thumbnails" }
+    )
+
+    foreach ($dep in $deps) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        try {
+            & $pythonExe -c "import $($dep.Import)" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                continue
+            }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+
+        Write-Info "Installing $($dep.Label) dependency: $($dep.Spec)"
+        & $UvCmd pip install --python $pythonExe $dep.Spec
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "Failed to install $($dep.Spec). $($dep.Label) features may be unavailable until installed manually."
+        }
+    }
 }
 
 function Set-PathVariable {

@@ -1304,6 +1304,7 @@ install_deps() {
             log_error "ddgs installation failed. web_search backend 'ddgs' will not work."
             exit 1
         fi
+        ensure_office_document_dependencies
         log_info "Termux note: matrix e2ee and local faster-whisper extras are excluded from .[termux-all] due to upstream Android wheel/toolchain blockers."
         log_info "Termux note: browser/WhatsApp tooling is not installed by default; see the Termux guide for optional follow-up steps."
 
@@ -1501,6 +1502,7 @@ PY
         log_error "ddgs installation failed. web_search backend 'ddgs' will not work."
         exit 1
     fi
+    ensure_office_document_dependencies
 
     log_success "All dependencies installed"
 }
@@ -1530,6 +1532,48 @@ ensure_ddgs_for_web_search() {
     fi
 
     "$python_exe" -c "import ddgs" >/dev/null 2>&1
+}
+
+ensure_office_document_dependencies() {
+    # Requested by desktop bootstrap users: make Word/PowerPoint helper skills
+    # usable immediately in the installer-created virtualenv.
+    if [ "$USE_VENV" != true ]; then
+        return 0
+    fi
+    if [ "$DISTRO" = "termux" ]; then
+        return 0
+    fi
+
+    local python_exe="$INSTALL_DIR/venv/bin/python"
+    if [ ! -x "$python_exe" ]; then
+        log_warn "Skipping office dependency check: $python_exe not found"
+        return 0
+    fi
+
+    local missing=false
+    local import_name=""
+    local spec=""
+    local label=""
+
+    for entry in \
+        "docx|python-docx>=1,<2|Word (.docx)" \
+        "pptx|python-pptx>=1,<2|PowerPoint (.pptx)" \
+        "markitdown|markitdown[pptx]>=0.1,<1|Office text extraction" \
+        "PIL|Pillow>=10,<12|PowerPoint thumbnails"; do
+        IFS='|' read -r import_name spec label <<< "$entry"
+        if ! "$python_exe" -c "import ${import_name}" >/dev/null 2>&1; then
+            missing=true
+            log_info "Installing ${label} dependency: ${spec}"
+            if ! $UV_CMD pip install --python "$python_exe" "$spec"; then
+                log_warn "Failed to install ${spec}. ${label} features may be unavailable until installed manually."
+            fi
+        fi
+    done
+
+    if [ "$missing" = true ]; then
+        log_info "Office dependency check completed."
+    fi
+    return 0
 }
 
 setup_path() {
