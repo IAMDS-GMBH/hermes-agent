@@ -238,6 +238,14 @@ def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
 
 
 def main():
+    # Set up file logging for gateway subprocess (so hub/auth logs go to files)
+    try:
+        from hermes_logging import setup_logging
+        setup_logging()
+    except Exception:
+        # Logging setup failure shouldn't block gateway startup
+        pass
+    
     _install_sidecar_publisher()
 
     # MCP tool discovery — runs in a background daemon thread so a slow or
