@@ -4531,11 +4531,11 @@ _OUTLOOK_AUTH_REQUESTS: Dict[str, Dict[str, Any]] = {}
 async def _outlook_device_code_callback(request_id: str, verification_uri: str, user_code: str, expires_in: int) -> None:
     """Callback invoked when device code is available."""
     _OUTLOOK_AUTH_REQUESTS[request_id] = {
-    "verification_uri": verification_uri,
-    "user_code": user_code,
-    "expires_in": expires_in,
-    "status": "pending",
-    "expires_at": time.time() + expires_in,
+        "verification_uri": verification_uri,
+        "user_code": user_code,
+        "expires_in": expires_in,
+        "status": "pending",
+        "expires_at": time.time() + expires_in,
     }
 
 
@@ -4545,6 +4545,11 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
     try:
         from tools.microsoft_graph_auth import GraphDelegatedCredentials, GraphDeviceCodeProvider
         import uuid
+        
+        logger.info("[Outlook] Initiating device code flow: tenant=%s, client=%s, has_secret=%s",
+                   body.tenant_id[:8] + "..." if len(body.tenant_id) > 8 else body.tenant_id,
+                   body.client_id[:8] + "..." if len(body.client_id) > 8 else body.client_id,
+                   bool(body.client_secret))
         
         request_id = str(uuid.uuid4())
         
@@ -4556,6 +4561,7 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
         
         # Create callback that stores device code info
         async def callback(verification_uri: str, user_code: str, expires_in: int) -> None:
+            logger.info("[Outlook] Device code callback triggered for request %s", request_id)
             await _outlook_device_code_callback(request_id, verification_uri, user_code, expires_in)
         
         provider = GraphDeviceCodeProvider(creds, device_code_callback=callback)
@@ -4563,13 +4569,15 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
         # Spawn background task to run device code flow
         async def run_auth_flow():
             try:
+                logger.info("[Outlook] Device code flow starting for request %s", request_id)
                 token = await provider.get_access_token()
                 _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "success"
                 _OUTLOOK_AUTH_REQUESTS[request_id]["access_token"] = token
+                logger.info("[Outlook] Device code flow completed successfully for request %s", request_id)
             except Exception as exc:
                 _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "error"
                 _OUTLOOK_AUTH_REQUESTS[request_id]["error"] = str(exc)
-                logger.error("[Outlook] Device code auth failed: %s", exc)
+                logger.error("[Outlook] Device code auth failed: %s", exc, exc_info=True)
         
         # Schedule the task (non-blocking)
         asyncio.create_task(run_auth_flow())
@@ -4578,12 +4586,14 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
         await asyncio.sleep(0.1)
         
         if request_id not in _OUTLOOK_AUTH_REQUESTS:
+            logger.error("[Outlook] Device code callback did not store request info for %s", request_id)
             raise HTTPException(
                 status_code=500,
                 detail="Device code callback did not store request info",
             )
         
         req = _OUTLOOK_AUTH_REQUESTS[request_id]
+        logger.info("[Outlook] Returning device code info for request %s", request_id)
         return {
             "ok": True,
             "request_id": request_id,
@@ -4594,7 +4604,7 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("[Outlook] Device code auth initiation failed")
+        logger.exception("[Outlook] Device code auth initiation failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"Authentication failed: {str(exc)}")
 
 

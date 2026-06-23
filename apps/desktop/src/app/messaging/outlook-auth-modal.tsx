@@ -55,6 +55,12 @@ export function OutlookAuthModal({
     // Initiate device code flow
     ;(async () => {
       try {
+        console.log('[Outlook Auth] Initiating device code flow with:', {
+          tenant_id: tenantId,
+          client_id: clientId,
+          has_secret: !!clientSecret
+        })
+
         const response = await fetch('/api/messaging/outlook/authenticate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -65,12 +71,28 @@ export function OutlookAuthModal({
           })
         })
 
+        console.log('[Outlook Auth] Initial response status:', response.status)
+
         if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.detail || 'Failed to initiate authentication')
+          let errorDetail = 'Failed to initiate authentication'
+          try {
+            const errorData = await response.json()
+            errorDetail = errorData.detail || JSON.stringify(errorData)
+          } catch {
+            errorDetail = `HTTP ${response.status}: ${response.statusText}`
+          }
+          console.error('[Outlook Auth] Initial fetch error:', errorDetail)
+          throw new Error(errorDetail)
         }
 
         const data = await response.json()
+        console.log('[Outlook Auth] Device code received:', {
+          request_id: data.request_id,
+          verification_uri: data.verification_uri,
+          user_code: data.user_code,
+          expires_in: data.expires_in
+        })
+
         setRequestId(data.request_id)
         setVerificationUri(data.verification_uri)
         setUserCode(data.user_code)
@@ -81,23 +103,29 @@ export function OutlookAuthModal({
         const interval = setInterval(async () => {
           try {
             const statusResponse = await fetch(`/api/messaging/outlook/authenticate/${data.request_id}`)
+            
             if (!statusResponse.ok) {
-              throw new Error('Failed to check status')
+              console.error('[Outlook Auth] Poll error, status:', statusResponse.status)
+              throw new Error(`Poll failed: HTTP ${statusResponse.status}`)
             }
 
             const status = await statusResponse.json()
+            console.log('[Outlook Auth] Poll response:', status)
 
             if (status.status === 'success') {
+              console.log('[Outlook Auth] Authentication successful')
               clearInterval(interval)
               setStage('success')
               setTimeout(() => {
                 onComplete(status.access_token)
               }, 1000)
             } else if (status.status === 'error') {
+              console.error('[Outlook Auth] Backend reported error:', status.error)
               clearInterval(interval)
               setStage('error')
               setError(status.error || 'Authentication failed')
             } else if (status.status === 'expired') {
+              console.warn('[Outlook Auth] Device code expired')
               clearInterval(interval)
               setStage('error')
               setError('Device code expired. Please try again.')
@@ -109,8 +137,10 @@ export function OutlookAuthModal({
 
         pollIntervalRef.current = interval
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to initiate authentication'
+        console.error('[Outlook Auth] Error during initialization:', errorMsg, err)
         setStage('error')
-        setError(err instanceof Error ? err.message : 'Failed to initiate authentication')
+        setError(errorMsg)
       }
     })()
 
