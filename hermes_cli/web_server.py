@@ -4384,6 +4384,30 @@ async def cancel_telegram_onboarding(pairing_id: str):
     return {"ok": True}
 
 
+# Platforms hidden from the desktop app messaging UI.
+# Their gateway adapters and scripts remain intact and fully functional —
+# they are simply not surfaced in the UI. Remove an entry here to re-expose it.
+_DESKTOP_HIDDEN_PLATFORMS: frozenset[str] = frozenset({
+    "discord",
+    "mattermost",
+    "matrix",
+    "bluebubbles",
+    "homeassistant",
+    "sms",
+    "dingtalk",
+    "feishu",
+    "wecom",
+    "wecom_callback",
+    "weixin",
+    "qqbot",
+    "google_chat",
+    "irc",
+    "msgraph_webhook",
+    "photon",
+    "simplex",
+})
+
+
 @app.get("/api/messaging/platforms")
 async def get_messaging_platforms():
     env_on_disk = load_env()
@@ -4392,6 +4416,7 @@ async def get_messaging_platforms():
         "platforms": [
             _messaging_platform_payload(entry, env_on_disk, runtime)
             for entry in _messaging_platform_catalog()
+            if entry["id"] not in _DESKTOP_HIDDEN_PLATFORMS
         ]
     }
 
