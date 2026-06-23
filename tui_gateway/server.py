@@ -9704,7 +9704,11 @@ def _(rid, params: dict) -> dict:
         from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
 
         settings = resolve_litellm_hub_settings()
-        resolved_url = f"{settings.get('base_url', '(not set)')}/litellm/public/agent_hub"
+        base_url = settings.get('base_url', '(not set)').rstrip('/')
+        if base_url.endswith('/litellm'):
+            resolved_url = f"{base_url}/public/agent_hub"
+        else:
+            resolved_url = f"{base_url}/litellm/public/agent_hub"
         data, error = fetch_litellm_hub_json("agent_hub", require_auth=False, settings=settings)
         if error:
             return _err(rid, 5026, f"{error} (resolved URL: {resolved_url})")
@@ -9722,7 +9726,11 @@ def _(rid, params: dict) -> dict:
         from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
 
         settings = resolve_litellm_hub_settings()
-        resolved_url = f"{settings.get('base_url', '(not set)')}/litellm/public/skill_hub"
+        base_url = settings.get('base_url', '(not set)').rstrip('/')
+        if base_url.endswith('/litellm'):
+            resolved_url = f"{base_url}/public/skill_hub"
+        else:
+            resolved_url = f"{base_url}/litellm/public/skill_hub"
         data, error = fetch_litellm_hub_json("skill_hub", require_auth=False, settings=settings)
         if error:
             return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")

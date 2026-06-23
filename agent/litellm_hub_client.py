@@ -119,7 +119,12 @@ def fetch_litellm_hub_json(
         headers["Authorization"] = f"Bearer {api_key}"
 
     public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
-    url = f"{base_url}/litellm/public/{public_endpoint}"
+    # Strip trailing /litellm if present to avoid double path segment
+    hub_base = base_url.rstrip("/")
+    if hub_base.endswith("/litellm"):
+        url = f"{hub_base}/public/{public_endpoint}"
+    else:
+        url = f"{hub_base}/litellm/public/{public_endpoint}"
     logger.info("[LiteLLMHub] Fetching %s (auth=%s)", url, bool(api_key))
     try:
         resp = httpx.get(
