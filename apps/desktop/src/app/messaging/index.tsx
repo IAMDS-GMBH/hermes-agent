@@ -514,7 +514,7 @@ function PlatformDetail({
                 onClick={onOutlookAuthStart}
                 size="sm"
                 variant="outline"
-                disabled={!edits.OUTLOOK_TENANT_ID || !edits.OUTLOOK_CLIENT_ID || !edits.OUTLOOK_CLIENT_SECRET || hasEdits}
+                disabled={hasEdits || !platform.env_vars.some(e => e.key === 'OUTLOOK_TENANT_ID' && e.is_set) || !platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_ID' && e.is_set) || !platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_SECRET' && e.is_set)}
               >
                 <ExternalLink className="size-3.5" />
                 Authenticate
