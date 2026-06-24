@@ -887,6 +887,19 @@ def load_gateway_config() -> GatewayConfig:
                 _pr = None
 
             _shared_loop_targets: list = list(Platform)
+            # Include bundled plugin platform names even if plugin discovery
+            # fails, so top-level blocks like `outlook: {enabled: true}` still
+            # bridge into gw_data["platforms"] instead of being ignored.
+            try:
+                for _name in Platform._scan_bundled_plugin_platforms():
+                    try:
+                        _plat = Platform(_name)
+                    except (ValueError, KeyError):
+                        continue
+                    if _plat not in _shared_loop_targets:
+                        _shared_loop_targets.append(_plat)
+            except Exception:
+                pass
             if _pr is not None:
                 for _entry in _pr.plugin_entries():
                     try:

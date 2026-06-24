@@ -118,16 +118,41 @@ def _strip_html(text: str) -> str:
 
 
 def _check_outlook_requirements() -> bool:
-    auth_mode = os.getenv("OUTLOOK_AUTH_MODE", "app").lower().strip()
-    if auth_mode == "delegated":
-        # Delegated mode needs tenant + client ID (+ secret if available)
-        return bool(os.getenv("OUTLOOK_TENANT_ID") and os.getenv("OUTLOOK_CLIENT_ID"))
-    return all([
-        os.getenv("OUTLOOK_TENANT_ID"),
-        os.getenv("OUTLOOK_CLIENT_ID"),
-        os.getenv("OUTLOOK_CLIENT_SECRET"),
-        os.getenv("OUTLOOK_MAILBOX"),
-    ])
+    """Return True when Outlook runtime dependencies are importable."""
+    try:
+        from tools.microsoft_graph_auth import (  # noqa: F401
+            GraphCredentials,
+            GraphDelegatedCredentials,
+            GraphDeviceCodeProvider,
+            MicrosoftGraphTokenProvider,
+        )
+        from tools.microsoft_graph_client import MicrosoftGraphClient  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _outlook_auth_mode(config: PlatformConfig) -> str:
+    extra = getattr(config, "extra", {}) or {}
+    raw = extra.get("auth_mode") or os.getenv("OUTLOOK_AUTH_MODE", "app")
+    return str(raw).strip().lower() or "app"
+
+
+def _validate_outlook_config(config: PlatformConfig) -> bool:
+    """Validate Outlook credentials from config.yaml extras or env vars."""
+    extra = getattr(config, "extra", {}) or {}
+    tenant_id = str(extra.get("tenant_id") or os.getenv("OUTLOOK_TENANT_ID", "")).strip()
+    client_id = str(extra.get("client_id") or os.getenv("OUTLOOK_CLIENT_ID", "")).strip()
+    client_secret = str(extra.get("client_secret") or os.getenv("OUTLOOK_CLIENT_SECRET", "")).strip()
+    mailbox = str(extra.get("mailbox") or os.getenv("OUTLOOK_MAILBOX", "")).strip()
+
+    if _outlook_auth_mode(config) == "delegated":
+        return bool(tenant_id and client_id)
+    return bool(tenant_id and client_id and client_secret and mailbox)
+
+
+def _is_outlook_connected(config: PlatformConfig) -> bool:
+    return _validate_outlook_config(config)
 
 
 # ---------------------------------------------------------------------------
@@ -529,14 +554,25 @@ def _outlook_setup() -> None:
             save_env_value(env_var, answer)
             print(f"  ✓ Saved {env_var}")
 
-    # Enable the platform in config.yaml
+    # Enable the platform in config.yaml. Keep the legacy top-level block for
+    # backward compatibility, but write the canonical platforms.outlook toggle.
     config = load_config()
+    platforms = config.get("platforms")
+    if not isinstance(platforms, dict):
+        platforms = {}
+        config["platforms"] = platforms
+    platform_cfg = platforms.get("outlook")
+    if not isinstance(platform_cfg, dict):
+        platform_cfg = {}
+        platforms["outlook"] = platform_cfg
+    platform_cfg["enabled"] = True
+
     if "outlook" not in config:
         config["outlook"] = {}
     config["outlook"]["enabled"] = True
     save_config(config)
     print()
-    print("  ✓ outlook.enabled = true written to config.yaml")
+    print("  ✓ platforms.outlook.enabled = true written to config.yaml")
     print("  ✓ Outlook setup complete — restart the gateway to connect.")
     print()
 
@@ -554,6 +590,8 @@ def register(ctx: Any) -> None:
         ),
         adapter_factory=OutlookAdapter,
         check_fn=_check_outlook_requirements,
+        validate_config=_validate_outlook_config,
+        is_connected=_is_outlook_connected,
         setup_fn=_outlook_setup,
         allowed_users_env="OUTLOOK_ALLOWED_USERS",
         allow_all_env="OUTLOOK_ALLOW_ALL_USERS",

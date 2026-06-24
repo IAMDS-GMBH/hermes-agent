@@ -497,6 +497,27 @@ class TestLoadGatewayConfig:
         assert config.platforms[Platform.API_SERVER].enabled is False
         assert Platform.API_SERVER not in config.get_connected_platforms()
 
+    def test_bridges_top_level_bundled_plugin_platform_when_discovery_fails(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        config_path = hermes_home / "config.yaml"
+        config_path.write_text(
+            "outlook:\n"
+            "  enabled: true\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        with patch(
+            "hermes_cli.plugins.discover_plugins",
+            side_effect=RuntimeError("boom"),
+        ):
+            config = load_gateway_config()
+
+        outlook = Platform("outlook")
+        assert outlook in config.platforms
+        assert config.platforms[outlook].enabled is True
+
     def test_bridges_nested_gateway_platforms_from_config_yaml(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
