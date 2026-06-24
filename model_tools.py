@@ -30,7 +30,7 @@ import time
 from typing import Dict, Any, List, Optional, Tuple
 
 from tools.registry import discover_builtin_tools, registry
-from toolsets import resolve_toolset, validate_toolset
+from toolsets import HARD_DISABLED_TOOLSETS, resolve_toolset, validate_toolset
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +403,12 @@ def _compute_tool_definitions(
                     print(f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}")
             elif not quiet_mode:
                 print(f"⚠️  Unknown toolset: {toolset_name}")
+
+    # Global hard block: these toolsets are never exposed to the model even if
+    # present in enabled_toolsets, platform defaults, or config.
+    for toolset_name in HARD_DISABLED_TOOLSETS:
+        if validate_toolset(toolset_name):
+            tools_to_include.difference_update(resolve_toolset(toolset_name))
 
     # Plugin-registered tools are now resolved through the normal toolset
     # path — validate_toolset() / resolve_toolset() / get_all_toolsets()

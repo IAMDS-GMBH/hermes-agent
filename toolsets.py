@@ -76,6 +76,18 @@ _HERMES_CORE_TOOLS = [
     "computer_use",
 ]
 
+# Toolsets hard-disabled at runtime across all platforms/surfaces.
+# They remain defined for backward compatibility with existing configs, but
+# model schema assembly strips them unconditionally.
+HARD_DISABLED_TOOLSETS = {
+    "browser",
+    "discord",
+    "homeassistant",
+    "spotify",
+    "x_search",
+    "yuanbao",
+}
+
 # Webhook events may originate from untrusted third-party content (for example,
 # public PR titles/comments). Keep the default webhook toolset intentionally
 # constrained to avoid local file/system execution by prompt injection.
