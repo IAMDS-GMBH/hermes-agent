@@ -1849,7 +1849,26 @@ src = open(path, encoding="utf-8").read()
 
 # Patch cached_provider_model_ids: insert short-circuit after 'if not normalized'
 old = 'normalized = normalize_provider(provider) or (provider or "")\n    if not normalized:\n        return []'
-if "# Custom: pin openai-api" not in src:
+pin_block = (
+    '\n\n'
+    '    # Custom: pin openai-api to fetched models; suppress copilot entirely.\n'
+    '    if normalized in ("openai", "openai-api"):\n'
+    f'        return {models_literal}\n'
+    '    if normalized == "copilot":\n'
+    '        return []'
+)
+if "# Custom: pin openai-api" in src:
+    src = re.sub(
+        r'(?ms)\n\n    # Custom: pin openai-api to fetched models; suppress copilot entirely\.\n'
+        r'    if normalized in \("openai", "openai-api"\):\n'
+        r'        return .*?\n'
+        r'    if normalized == "copilot":\n'
+        r'        return \[\]',
+        pin_block,
+        src,
+        count=1,
+    )
+else:
     new = (
         'normalized = normalize_provider(provider) or (provider or "")\n'
         '    if not normalized:\n'
@@ -1888,7 +1907,14 @@ new_save = (
     '    except Exception:\n'
     '        pass'
 )
-if '# Custom: never persist copilot' not in src:
+if '# Custom: never persist copilot' in src:
+    src = re.sub(
+        r'filtered\["openai-api"\]\s*=\s*\{"fp":\s*"pinned",\s*"at":\s*9999999999\.0,\s*"models":\s*.*?\}',
+        f'filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": {models_literal}}}',
+        src,
+        count=1,
+    )
+else:
     src = src.replace(old_save, new_save, 1)
 
 # Clear static copilot model list
