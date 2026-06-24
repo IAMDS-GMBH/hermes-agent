@@ -23,6 +23,7 @@ interface LiteLLMAgent {
   id: string
   name: string
   description?: string
+  active: boolean
 }
 
 interface LiteLLMSkill {
@@ -80,6 +81,7 @@ export function HubView({ ...props }: HubViewProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
   const [installing, setInstalling] = useState<{ id: string; skill: LiteLLMSkill } | null>(null)
   const [installProgress, setInstallProgress] = useState<string>('')
+  const [togglingAgent, setTogglingAgent] = useState<string | null>(null)
 
   // Refresh handlers
   const refresh = async () => {
@@ -96,7 +98,8 @@ export function HubView({ ...props }: HubViewProps) {
           return {
             id: String(a.id || a.name || ''),
             name: String(a.name || ''),
-            description: a.description ? String(a.description) : undefined
+            description: a.description ? String(a.description) : undefined,
+            active: Boolean(a.active),
           }
         })
         setAgents(agentsList)
@@ -127,6 +130,23 @@ export function HubView({ ...props }: HubViewProps) {
       console.error('[Hub] load error:', message)
       setError(message)
       notifyError(err, `Failed to load ${mode}`)
+    }
+  }
+
+  const handleToggleAgent = async (agent: LiteLLMAgent) => {
+    setTogglingAgent(agent.name)
+    try {
+      const method = agent.active ? 'litellm_hub.agent_deactivate' : 'litellm_hub.agent_activate'
+      await requestGateway<{ active_agents: string[] }>(method, { agent_name: agent.name })
+      // Optimistically update local state
+      setAgents(prev => prev
+        ? prev.map(a => a.name === agent.name ? { ...a, active: !agent.active } : a)
+        : prev
+      )
+    } catch (err) {
+      notifyError(err, `Failed to ${agent.active ? 'deactivate' : 'activate'} ${agent.name}`)
+    } finally {
+      setTogglingAgent(null)
     }
   }
 
@@ -227,7 +247,12 @@ export function HubView({ ...props }: HubViewProps) {
         {isLoading ? (
           <PageLoader />
         ) : mode === 'agents' ? (
-          <AgentsList agents={filteredAgentsList || []} query={query} />
+          <AgentsList
+            agents={filteredAgentsList || []}
+            query={query}
+            togglingAgent={togglingAgent}
+            onToggle={handleToggleAgent}
+          />
         ) : (
           <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} />
         )}
@@ -247,9 +272,11 @@ export function HubView({ ...props }: HubViewProps) {
 interface AgentsListProps {
   agents: LiteLLMAgent[]
   query: string
+  togglingAgent: string | null
+  onToggle: (agent: LiteLLMAgent) => void
 }
 
-function AgentsList({ agents, query }: AgentsListProps) {
+function AgentsList({ agents, query, togglingAgent, onToggle }: AgentsListProps) {
   return (
     <div className="overflow-y-auto flex-1">
       {agents.length === 0 ? (
@@ -261,18 +288,47 @@ function AgentsList({ agents, query }: AgentsListProps) {
           {agents.map(agent => (
             <div
               key={agent.id}
-              className="p-3 rounded border border-border bg-card hover:bg-accent/5 transition-colors"
+              className={cn(
+                'p-3 rounded border transition-colors',
+                agent.active
+                  ? 'border-blue-500/40 bg-blue-500/5 dark:bg-blue-500/10'
+                  : 'border-border bg-card hover:bg-accent/5'
+              )}
             >
               <div className="flex items-start gap-2">
-                <Codicon className="mt-1" name="robot" />
+                <Codicon className="mt-1 flex-shrink-0" name="robot" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-foreground">{agent.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">{agent.name}</span>
+                    {agent.active && (
+                      <Badge variant="outline" className="text-xs text-blue-600 dark:text-blue-400 border-blue-500/40">
+                        active
+                      </Badge>
+                    )}
+                  </div>
                   {agent.description && (
                     <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
                       {agent.description}
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={() => onToggle(agent)}
+                  disabled={togglingAgent === agent.name}
+                  className={cn(
+                    'ml-2 px-2.5 py-1 text-xs font-medium rounded transition-colors flex-shrink-0',
+                    agent.active
+                      ? 'text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-400'
+                      : 'text-white bg-blue-600 hover:bg-blue-700',
+                    togglingAgent === agent.name && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {togglingAgent === agent.name
+                    ? '...'
+                    : agent.active
+                      ? 'Deactivate'
+                      : 'Activate'}
+                </button>
               </div>
             </div>
           ))}
@@ -367,3 +423,4 @@ function SkillInstallModal({ skill, progress, onClose }: SkillInstallModalProps)
     </div>
   )
 }
+

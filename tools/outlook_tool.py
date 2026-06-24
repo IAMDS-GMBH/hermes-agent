@@ -291,6 +291,16 @@ def outlook_read_emails(
 ) -> str:
     """Fetch recent emails, or handle device-code auth if no token exists."""
 
+    # Guard: creds required before anything else
+    creds = _get_outlook_creds()
+    if not creds["tenant_id"] or not creds["client_id"]:
+        return json.dumps({
+            "error": (
+                "Outlook credentials not configured. "
+                "Go to Messaging → Outlook setup and enter your Azure AD Tenant ID and Client ID."
+            )
+        })
+
     # Step 1 — if caller is providing a device_code to poll (user just authed)
     if device_code:
         try:
@@ -401,6 +411,4 @@ registry.register(
         device_code=str(args.get("device_code", "")),
         task_id=kw.get("task_id"),
     ),
-    check_fn=_check_outlook_tool_requirements,
-    requires_env=["OUTLOOK_TENANT_ID", "OUTLOOK_CLIENT_ID"],
 )

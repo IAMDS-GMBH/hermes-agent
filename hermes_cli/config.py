@@ -1829,6 +1829,10 @@ DEFAULT_CONFIG = {
             "base_url": "",
             "api_key": "",
             "timeout": 20,
+            # List of agent names activated by the user via the Hub UI.
+            # Active agents are exposed to the main session as callable subagents
+            # via the call_litellm_agent tool (A2A endpoint).
+            "active_agents": [],
         },
     },
 

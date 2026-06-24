@@ -9699,24 +9699,86 @@ def _(rid, params: dict) -> dict:
  
 @method("litellm_hub.agents")
 def _(rid, params: dict) -> dict:
-    """Fetch LiteLLM Agent Hub entries."""
+    """Fetch agents from LiteLLM /v1/agents endpoint."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
+        from agent.litellm_hub_client import fetch_litellm_agents, get_active_agents, resolve_litellm_hub_settings
 
         settings = resolve_litellm_hub_settings()
         base_url = settings.get('base_url', '(not set)').rstrip('/')
-        if base_url.endswith('/litellm'):
-            resolved_url = f"{base_url}/public/agent_hub"
+        hub_base = base_url.rstrip('/')
+        if hub_base.endswith('/v1'):
+            hub_base = hub_base[:-3]
+        if hub_base.endswith('/litellm'):
+            resolved_url = f"{hub_base}/v1/agents"
         else:
-            resolved_url = f"{base_url}/litellm/public/agent_hub"
-        data, error = fetch_litellm_hub_json("agent_hub", require_auth=False, settings=settings)
+            resolved_url = f"{hub_base}/litellm/v1/agents"
+
+        agents, error = fetch_litellm_agents(settings=settings)
         if error:
             return _err(rid, 5026, f"{error} (resolved URL: {resolved_url})")
 
-        agents = data if isinstance(data, list) else (data.get("agents", []) or data.get("plugins", []) if data else [])
-        return _ok(rid, {"agents": agents, "resolved_url": resolved_url})
+        active = set(get_active_agents())
+        # Normalise agent objects — LiteLLM may return agent_id or id
+        normalised = []
+        for a in (agents or []):
+            if not isinstance(a, dict):
+                continue
+            name = str(a.get("agent_name") or a.get("name") or a.get("agent_id") or a.get("id") or "")
+            agent_id = str(a.get("agent_id") or a.get("id") or name)
+            normalised.append({
+                "id": agent_id,
+                "name": name,
+                "description": a.get("description") or a.get("agent_description") or "",
+                "active": name in active or agent_id in active,
+            })
+        return _ok(rid, {"agents": normalised, "resolved_url": resolved_url})
     except Exception as e:
         return _err(rid, 5027, str(e))
+
+
+@method("litellm_hub.active_agents")
+def _(rid, params: dict) -> dict:
+    """Return the list of currently active agent names from config."""
+    try:
+        from agent.litellm_hub_client import get_active_agents
+        return _ok(rid, {"active_agents": get_active_agents()})
+    except Exception as e:
+        return _err(rid, 5035, str(e))
+
+
+@method("litellm_hub.agent_activate")
+def _(rid, params: dict) -> dict:
+    """Activate an agent by name so it becomes callable as a subagent."""
+    try:
+        from agent.litellm_hub_client import get_active_agents, set_active_agents
+        from tools.registry import invalidate_check_fn_cache
+        agent_name = str(params.get("agent_name") or "").strip()
+        if not agent_name:
+            return _err(rid, 5036, "agent_name is required")
+        current = get_active_agents()
+        if agent_name not in current:
+            set_active_agents(current + [agent_name])
+        invalidate_check_fn_cache()
+        return _ok(rid, {"active_agents": get_active_agents()})
+    except Exception as e:
+        return _err(rid, 5037, str(e))
+
+
+@method("litellm_hub.agent_deactivate")
+def _(rid, params: dict) -> dict:
+    """Deactivate an agent by name so it is no longer callable as a subagent."""
+    try:
+        from agent.litellm_hub_client import get_active_agents, set_active_agents
+        from tools.registry import invalidate_check_fn_cache
+        agent_name = str(params.get("agent_name") or "").strip()
+        if not agent_name:
+            return _err(rid, 5038, "agent_name is required")
+        current = get_active_agents()
+        set_active_agents([a for a in current if a != agent_name])
+        invalidate_check_fn_cache()
+        return _ok(rid, {"active_agents": get_active_agents()})
+    except Exception as e:
+        return _err(rid, 5039, str(e))
 
 
 @method("litellm_hub.skills")

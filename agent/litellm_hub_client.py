@@ -152,3 +152,88 @@ def fetch_litellm_hub_json(
     except ValueError:
         logger.error("[LiteLLMHub] Non-JSON response from %s: %.200s", url, resp.text)
         return None, f"LiteLLM hub returned non-JSON response from {url}."
+
+
+def fetch_litellm_agents(
+    settings: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[list], Optional[str]]:
+    """Fetch agents from the LiteLLM ``/v1/agents`` endpoint.
+
+    Returns (agents_list, error_message).  The agents list items contain at
+    minimum ``agent_id`` / ``agent_name`` fields as returned by LiteLLM.
+    """
+    settings = settings or resolve_litellm_hub_settings()
+    base_url = str(settings.get("base_url", "")).strip().rstrip("/")
+    api_key = str(settings.get("api_key", "")).strip()
+    timeout = settings.get("timeout", 20)
+
+    if not base_url:
+        return None, (
+            "LiteLLM base_url is not configured. "
+            "Set skills.litellm_hub.base_url in config.yaml."
+        )
+
+    # Normalise: strip /litellm suffix (handled below), strip /v1 suffix
+    hub_base = base_url.rstrip("/")
+    if hub_base.endswith("/v1"):
+        hub_base = hub_base[:-3]
+    if hub_base.endswith("/litellm"):
+        url = f"{hub_base}/v1/agents"
+    else:
+        url = f"{hub_base}/litellm/v1/agents"
+
+    headers: Dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    logger.info("[LiteLLMHub] Fetching agents from %s", url)
+    try:
+        resp = httpx.get(url, headers=headers or None, timeout=timeout, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        logger.error("[LiteLLMHub] Agents request failed for %s: %s", url, exc)
+        return None, f"Failed to reach LiteLLM agents endpoint at {url}: {exc}"
+
+    if resp.status_code == 401:
+        return None, f"Unauthorized (401) at {url}. Check API key."
+    if resp.status_code == 403:
+        return None, f"Forbidden (403) at {url}. Check API key scope."
+    if resp.status_code != 200:
+        return None, f"LiteLLM agents request failed: HTTP {resp.status_code} from {url}."
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return None, f"LiteLLM agents endpoint returned non-JSON from {url}."
+
+    # LiteLLM may return {"data": [...]} (OpenAI list format) or a plain list
+    if isinstance(data, list):
+        agents = data
+    elif isinstance(data, dict):
+        agents = data.get("data") or data.get("agents") or []
+    else:
+        agents = []
+
+    return agents, None
+
+
+def get_active_agents() -> list[str]:
+    """Return the list of agent names the user has activated via the Hub UI."""
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config() or {}
+        hub_cfg = cfg.get("skills", {}).get("litellm_hub", {})
+        active = hub_cfg.get("active_agents", [])
+        return [str(a) for a in active if a]
+    except Exception:
+        return []
+
+
+def set_active_agents(agent_names: list[str]) -> None:
+    """Persist the list of active agent names to config.yaml."""
+    from hermes_cli.config import load_config, save_config
+    cfg = load_config() or {}
+    skills = cfg.setdefault("skills", {})
+    hub = skills.setdefault("litellm_hub", {})
+    hub["active_agents"] = sorted(set(agent_names))
+    save_config(cfg)
+
