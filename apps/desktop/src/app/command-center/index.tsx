@@ -4,6 +4,8 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRe
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { SearchField } from '@/components/ui/search-field'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
@@ -17,7 +19,7 @@ import {
 import type { ActionStatusResponse, AnalyticsResponse, StatusResponse } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { sessionTitle } from '@/lib/chat-runtime'
-import { Activity, AlertCircle, BarChart3, Pin } from '@/lib/icons'
+import { Activity, AlertCircle, BarChart3, Copy, ExternalLink, Pin } from '@/lib/icons'
 import { exportSession } from '@/lib/session-export'
 import { cn } from '@/lib/utils'
 import { upsertDesktopActionTask } from '@/store/activity'
@@ -69,6 +71,45 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [delayMs, value])
 
   return debounced
+}
+
+interface OutlookDeviceCodePrompt {
+  userCode: string
+  verificationUri: string
+}
+
+function extractOutlookDeviceCodePrompt(lines: readonly string[]): OutlookDeviceCodePrompt | null {
+  if (!lines.length) {
+    return null
+  }
+
+  const joined = lines.join('\n')
+  const inline = joined.match(/open\s+(https?:\/\/\S+)\s+and\s+enter\s+([A-Z0-9-]+)/i)
+  if (inline) {
+    return {
+      verificationUri: inline[1].replace(/[|)\].,;]+$/g, ''),
+      userCode: inline[2].trim()
+    }
+  }
+
+  let verificationUri = ''
+  let userCode = ''
+  for (const line of lines) {
+    if (!verificationUri) {
+      const open = line.match(/Open:\s*(https?:\/\/\S+)/i)
+      if (open) {
+        verificationUri = open[1].replace(/[|)\].,;]+$/g, '')
+      }
+    }
+    if (!userCode) {
+      const enter = line.match(/Enter:\s*([A-Z0-9-]+)/i)
+      if (enter) {
+        userCode = enter[1].trim()
+      }
+    }
+  }
+
+  return verificationUri && userCode ? { verificationUri, userCode } : null
 }
 
 function RowIconButton({
@@ -126,6 +167,7 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
   const [logs, setLogs] = useState<string[]>([])
   const [systemLoading, setSystemLoading] = useState(false)
   const [systemError, setSystemError] = useState('')
+  const [outlookPrompt, setOutlookPrompt] = useState<null | OutlookDeviceCodePrompt>(null)
   const [systemAction, setSystemAction] = useState<ActionStatusResponse | null>(null)
   const [usagePeriod, setUsagePeriod] = useState<UsagePeriod>(30)
   const [usage, setUsage] = useState<AnalyticsResponse | null>(null)
@@ -230,12 +272,23 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
       try {
         const started = kind === 'restart' ? await restartGateway() : await updateHermes()
         let nextStatus: ActionStatusResponse | null = null
+        let promptCaptured = false
+        if (kind === 'restart') {
+          setOutlookPrompt(null)
+        }
 
         for (let attempt = 0; attempt < 18; attempt += 1) {
           await new Promise(resolve => window.setTimeout(resolve, 1200))
           const polled = await getActionStatus(started.name, 180)
           nextStatus = polled
           setSystemAction(polled)
+          if (kind === 'restart' && !promptCaptured) {
+            const prompt = extractOutlookDeviceCodePrompt(polled.lines)
+            if (prompt) {
+              promptCaptured = true
+              setOutlookPrompt(prompt)
+            }
+          }
           upsertDesktopActionTask(polled)
 
           if (!polled.running) {
@@ -434,7 +487,64 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
           )}
         </OverlayMain>
       </OverlaySplitLayout>
+      <OutlookDeviceCodeDialog prompt={outlookPrompt} onClose={() => setOutlookPrompt(null)} />
     </OverlayView>
+  )
+}
+
+function OutlookDeviceCodeDialog({
+  onClose,
+  prompt
+}: {
+  onClose: () => void
+  prompt: null | OutlookDeviceCodePrompt
+}) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <Dialog open={Boolean(prompt)} onOpenChange={open => !open && onClose()}>
+      <DialogContent showCloseButton>
+        <DialogHeader>
+          <DialogTitle>Outlook authentication required</DialogTitle>
+          <DialogDescription>
+            Gateway restart triggered Outlook device login. Open the Microsoft page and enter this code.
+          </DialogDescription>
+        </DialogHeader>
+
+        {prompt && (
+          <div className="space-y-3">
+            <Button asChild className="w-full" variant="default">
+              <a href={prompt.verificationUri} rel="noreferrer" target="_blank">
+                <ExternalLink className="size-4" />
+                Open Microsoft Login
+              </a>
+            </Button>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={prompt.userCode} className="font-mono text-lg font-bold tracking-widest" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  void navigator.clipboard.writeText(prompt.userCode)
+                  setCopied(true)
+                  window.setTimeout(() => setCopied(false), 1500)
+                }}
+              >
+                <Copy className="size-4" />
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

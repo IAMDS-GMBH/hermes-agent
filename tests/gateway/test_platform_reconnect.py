@@ -105,7 +105,7 @@ class TestStartupPlatformIsolation:
         )
         runner._connect_adapter_with_timeout = AsyncMock(
             side_effect=[
-                TimeoutError("telegram connect timed out after 30s"),
+                TimeoutError("telegram connect timed out after 100s"),
                 True,
             ]
         )
@@ -765,4 +765,3 @@ class TestPlatformSlashCommand:
         runner = _make_runner()
         out = await runner._handle_platform_command(self._make_event("/platform"))
         assert "Gateway platforms" in out
-

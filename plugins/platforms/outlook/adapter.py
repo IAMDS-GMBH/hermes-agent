@@ -134,8 +134,11 @@ def _check_outlook_requirements() -> bool:
 
 def _outlook_auth_mode(config: PlatformConfig) -> str:
     extra = getattr(config, "extra", {}) or {}
-    raw = extra.get("auth_mode") or os.getenv("OUTLOOK_AUTH_MODE", "app")
-    return str(raw).strip().lower() or "app"
+    raw = extra.get("auth_mode") or os.getenv("OUTLOOK_AUTH_MODE", "auto")
+    mode = str(raw).strip().lower() or "auto"
+    if mode in {"app", "delegated"}:
+        return mode
+    return "auto"
 
 
 def _validate_outlook_config(config: PlatformConfig) -> bool:
@@ -145,10 +148,15 @@ def _validate_outlook_config(config: PlatformConfig) -> bool:
     client_id = str(extra.get("client_id") or os.getenv("OUTLOOK_CLIENT_ID", "")).strip()
     client_secret = str(extra.get("client_secret") or os.getenv("OUTLOOK_CLIENT_SECRET", "")).strip()
     mailbox = str(extra.get("mailbox") or os.getenv("OUTLOOK_MAILBOX", "")).strip()
-
-    if _outlook_auth_mode(config) == "delegated":
-        return bool(tenant_id and client_id)
-    return bool(tenant_id and client_id and client_secret and mailbox)
+    mode = _outlook_auth_mode(config)
+    has_delegated = bool(tenant_id and client_id)
+    has_app = bool(tenant_id and client_id and client_secret and mailbox)
+    if mode == "delegated":
+        return has_delegated
+    if mode == "app":
+        return has_app
+    # auto: prefer app-only when fully configured, otherwise delegated if possible.
+    return has_app or has_delegated
 
 
 def _is_outlook_connected(config: PlatformConfig) -> bool:
@@ -207,8 +215,15 @@ class OutlookAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        auth_mode = os.getenv("OUTLOOK_AUTH_MODE", "app").lower().strip()
+        auth_mode = _outlook_auth_mode(self._config)
+        if auth_mode == "auto":
+            auth_mode = (
+                "app"
+                if all([self._tenant_id, self._client_id, self._client_secret, self._mailbox])
+                else "delegated"
+            )
         extra = self._config.extra or {}
+        logger.info("[Outlook] Using auth mode: %s", auth_mode)
 
         if auth_mode == "delegated":
             if not all([self._tenant_id, self._client_id]):
