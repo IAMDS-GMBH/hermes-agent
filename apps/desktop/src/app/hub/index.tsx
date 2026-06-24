@@ -79,6 +79,8 @@ export function HubView({ ...props }: HubViewProps) {
   const [skills, setSkills] = useState<LiteLLMSkill[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
+  const [rawResponse, setRawResponse] = useState<unknown>(null)
+  const [showRaw, setShowRaw] = useState(false)
   const [installing, setInstalling] = useState<{ id: string; skill: LiteLLMSkill } | null>(null)
   const [installProgress, setInstallProgress] = useState<string>('')
   const [togglingAgent, setTogglingAgent] = useState<string | null>(null)
@@ -87,12 +89,15 @@ export function HubView({ ...props }: HubViewProps) {
   const refresh = async () => {
     setError(null)
     setResolvedUrl(null)
+    setRawResponse(null)
+    setShowRaw(false)
 
     try {
       if (mode === 'agents') {
         const data = await requestGateway<{ agents: unknown[]; resolved_url?: string }>('litellm_hub.agents', { limit: 100 })
         console.log('[Hub] agents resolved_url:', data?.resolved_url)
         setResolvedUrl(data?.resolved_url || null)
+        setRawResponse(data)
         const agentsList = (data?.agents || []).map((agent: unknown) => {
           const a = agent as Record<string, unknown>
           return {
@@ -107,6 +112,7 @@ export function HubView({ ...props }: HubViewProps) {
         const data = await requestGateway<{ skills: unknown[]; resolved_url?: string }>('litellm_hub.skills', { limit: 100 })
         console.log('[Hub] skills resolved_url:', data?.resolved_url)
         setResolvedUrl(data?.resolved_url || null)
+        setRawResponse(data)
         const skillsList = (data?.skills || []).map((skill: unknown) => {
           const s = skill as Record<string, unknown>
           let sourceStr = undefined
@@ -129,6 +135,7 @@ export function HubView({ ...props }: HubViewProps) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[Hub] load error:', message)
       setError(message)
+      setRawResponse({ error: message })
       notifyError(err, `Failed to load ${mode}`)
     }
   }
@@ -255,6 +262,23 @@ export function HubView({ ...props }: HubViewProps) {
           />
         ) : (
           <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} />
+        )}
+
+        {rawResponse !== null && (
+          <div className="border-t border-border mt-2">
+            <button
+              onClick={() => setShowRaw(v => !v)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/5 transition-colors text-left"
+            >
+              <span className={cn('transition-transform', showRaw ? 'rotate-90' : '')}>▶</span>
+              Raw server response
+            </button>
+            {showRaw && (
+              <pre className="px-4 pb-4 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+                {JSON.stringify(rawResponse, null, 2)}
+              </pre>
+            )}
+          </div>
         )}
         
         {installing && (
