@@ -58,10 +58,22 @@ def _outlook_creds_from_config() -> dict[str, str]:
 
 def _get_outlook_creds() -> dict[str, str]:
     cfg = _outlook_creds_from_config()
+
+    def _env(key: str) -> str:
+        # Try process env first, then ~/.hermes/.env file
+        val = os.getenv(key, "")
+        if not val:
+            try:
+                from hermes_cli.config import get_env_value
+                val = get_env_value(key) or ""
+            except Exception:
+                pass
+        return val.strip()
+
     return {
-        "tenant_id": cfg["tenant_id"] or os.getenv("OUTLOOK_TENANT_ID", ""),
-        "client_id": cfg["client_id"] or os.getenv("OUTLOOK_CLIENT_ID", ""),
-        "client_secret": cfg["client_secret"] or os.getenv("OUTLOOK_CLIENT_SECRET", ""),
+        "tenant_id": cfg["tenant_id"] or _env("OUTLOOK_TENANT_ID"),
+        "client_id": cfg["client_id"] or _env("OUTLOOK_CLIENT_ID"),
+        "client_secret": cfg["client_secret"] or _env("OUTLOOK_CLIENT_SECRET"),
     }
 
 
