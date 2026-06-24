@@ -1925,6 +1925,20 @@ src = re.sub(
     count=1,
 )
 
+# Pin static fallback catalogs too (used by curated/model-picker merge paths)
+src = re.sub(
+    r'(?ms)"openai":\s*\[[^\]]*?\],',
+    f'"openai": {models_literal},',
+    src,
+    count=1,
+)
+src = re.sub(
+    r'(?ms)"openai-api":\s*\[[^\]]*?\],',
+    f'"openai-api": {models_literal},',
+    src,
+    count=1,
+)
+
 open(path, "w", encoding="utf-8").write(src)
 print("models.py patched")
 PYEOF
