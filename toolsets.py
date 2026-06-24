@@ -61,7 +61,7 @@ _HERMES_CORE_TOOLS = [
     # Outlook / Microsoft 365 inbox read (gated on OUTLOOK_TENANT_ID + OUTLOOK_CLIENT_ID via check_fn)
     "outlook_read_emails",
     # LiteLLM A2A — call external agents registered on LiteLLM proxy (gated on base_url + active agents)
-    "call_litellm_agent",
+    "call_litellm_agent", "list_litellm_active_agents",
     # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
     # Kanban multi-agent coordination — only in schema when the agent is
