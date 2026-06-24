@@ -1128,15 +1128,19 @@ clone_repo() {
             git pull --ff-only origin "$BRANCH"
 
             if [ -n "$autostash_ref" ]; then
-                local restore_now="yes"
+                # Managed install checkout: default to NOT restoring stashed
+                # local changes after update. Auto-restore reintroduces stale
+                # patched files on every update (reported repeatedly in desktop
+                # installs). Users can still restore explicitly from git stash.
+                local restore_now="no"
                 if [ -t 0 ] && [ -t 1 ]; then
                     echo
                     log_warn "Local changes were stashed before updating."
                     log_warn "Restoring them may reapply local customizations onto the updated codebase."
-                    printf "Restore local changes now? [Y/n] "
+                    printf "Restore local changes now? [y/N] "
                     read -r restore_answer
                     case "$restore_answer" in
-                        ""|y|Y|yes|YES|Yes) restore_now="yes" ;;
+                        y|Y|yes|YES|Yes) restore_now="yes" ;;
                         *) restore_now="no" ;;
                     esac
                 fi

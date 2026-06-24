@@ -1218,14 +1218,16 @@ function Install-Repository {
                 }
 
                 if ($autostashRef) {
-                    # Default to restoring so work is never silently dropped.
+                    # Managed install checkout: default to NOT restoring stashed
+                    # local changes after update. Auto-restore reintroduces stale
+                    # patched files on every update (reported repeatedly in
+                    # desktop installs). Users can still restore explicitly from
+                    # git stash.
+                    #
                     # Only prompt when we're certain a human can answer: an
                     # interactive session AND a real, non-redirected console on
-                    # both stdin and stdout. The desktop "Update" button and
-                    # bootstrap run the installer without a usable console -- in
-                    # those cases Read-Host would hang or return empty, so we
-                    # skip the prompt and just restore (the safe default).
-                    $restoreNow = $true
+                    # both stdin and stdout.
+                    $restoreNow = $false
                     $hasConsole = $false
                     try {
                         $hasConsole = (
@@ -1238,8 +1240,8 @@ function Install-Repository {
                     if ($hasConsole) {
                         Write-Warn "Local changes were stashed before updating."
                         Write-Warn "Restoring them may reapply local customizations onto the updated codebase."
-                        $restoreAnswer = Read-Host "Restore local changes now? [Y/n]"
-                        if ($restoreAnswer -match '^(n|no)$') { $restoreNow = $false }
+                        $restoreAnswer = Read-Host "Restore local changes now? [y/N]"
+                        if ($restoreAnswer -match '^(y|yes)$') { $restoreNow = $true }
                     }
 
                     if ($restoreNow) {
