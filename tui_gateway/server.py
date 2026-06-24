@@ -9699,28 +9699,24 @@ def _(rid, params: dict) -> dict:
  
 @method("litellm_hub.agents")
 def _(rid, params: dict) -> dict:
-    """Fetch agents from LiteLLM /v1/agents endpoint."""
+    """Fetch LiteLLM Agent Hub entries."""
     try:
-        from agent.litellm_hub_client import fetch_litellm_agents, get_active_agents, resolve_litellm_hub_settings
+        from agent.litellm_hub_client import fetch_litellm_hub_json, get_active_agents, resolve_litellm_hub_settings
 
         settings = resolve_litellm_hub_settings()
         base_url = settings.get('base_url', '(not set)').rstrip('/')
-        hub_base = base_url.rstrip('/')
-        if hub_base.endswith('/v1'):
-            hub_base = hub_base[:-3]
-        if hub_base.endswith('/litellm'):
-            resolved_url = f"{hub_base}/v1/agents"
+        if base_url.endswith('/litellm'):
+            resolved_url = f"{base_url}/public/agent_hub"
         else:
-            resolved_url = f"{hub_base}/litellm/v1/agents"
-
-        agents, error = fetch_litellm_agents(settings=settings)
+            resolved_url = f"{base_url}/litellm/public/agent_hub"
+        data, error = fetch_litellm_hub_json("agent_hub", require_auth=False, settings=settings)
         if error:
             return _err(rid, 5026, f"{error} (resolved URL: {resolved_url})")
 
         active = set(get_active_agents())
-        # Normalise agent objects — LiteLLM may return agent_id or id
+        raw = data if isinstance(data, list) else (data.get("agents", []) or data.get("plugins", []) if data else [])
         normalised = []
-        for a in (agents or []):
+        for a in raw:
             if not isinstance(a, dict):
                 continue
             name = str(a.get("agent_name") or a.get("name") or a.get("agent_id") or a.get("id") or "")
