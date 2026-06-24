@@ -75,7 +75,7 @@ CONFIGURABLE_TOOLSETS = [
     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
     ("computer_use",     "🖱️  Computer Use (macOS)",     "background desktop control via cua-driver"),
     ("outlook",          "📧 Outlook / Microsoft 365",   "read emails on demand via Microsoft Graph"),
-    ("litellm_agents",   "🤖 LiteLLM Agents (A2A)",      "call external agents registered on LiteLLM proxy"),
+    ("litellm_agents",   "🤖 LiteLLM Agents (A2A)",      "call_litellm_agent, list_litellm_active_agents"),
 ]
 
 
@@ -108,7 +108,7 @@ def gui_toolset_label(label: str) -> str:
 # `hermes tools` → X (Twitter) Search setup walks users through credential
 # setup. The tool's check_fn means the schema still won't appear to the
 # model if the credential later goes missing or expires.
-_DEFAULT_OFF_TOOLSETS = {"moa", "homeassistant", "spotify", "discord", "discord_admin", "video", "video_gen", "x_search", "outlook", "litellm_agents"}
+_DEFAULT_OFF_TOOLSETS = {"moa", "homeassistant", "spotify", "discord", "discord_admin", "video", "video_gen", "x_search", "outlook"}
 
 
 def _xai_credentials_present() -> bool:

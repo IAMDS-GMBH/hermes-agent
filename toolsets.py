@@ -201,6 +201,12 @@ TOOLSETS = {
         "includes": []
     },
 
+    "litellm_agents": {
+        "description": "LiteLLM A2A tools for listing active agents and delegating requests",
+        "tools": ["list_litellm_active_agents", "call_litellm_agent"],
+        "includes": []
+    },
+
     
     "file": {
         "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
