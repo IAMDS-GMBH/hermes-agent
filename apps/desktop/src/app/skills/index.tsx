@@ -23,6 +23,11 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 const SKILLS_MODES = ['skills', 'toolsets'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
+const CATEGORY_LABELS: Record<string, string> = {
+  aimds_custom: 'AIMDS Custom'
+}
+
+const categoryLabel = (category: string) => CATEGORY_LABELS[category] ?? prettyName(category)
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -203,7 +208,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                 key={category.key}
                 onClick={() => setActiveCategory(activeCategory === category.key ? null : category.key)}
               >
-                {prettyName(category.key)} <TextTabMeta>{category.count}</TextTabMeta>
+                {categoryLabel(category.key)} <TextTabMeta>{category.count}</TextTabMeta>
               </TextTab>
             ))}
           </>
@@ -250,7 +255,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                 <div className="space-y-1.5" key={category}>
                   {activeCategory === null && (
                     <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      {prettyName(category)}
+                      {categoryLabel(category)}
                     </div>
                   )}
                   <div>

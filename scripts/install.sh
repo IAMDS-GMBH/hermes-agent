@@ -2210,6 +2210,12 @@ SOUL_EOF
                 log_success "Skills copied to ~/.hermes/skills/"
             fi
         fi
+
+        # Keep AIMDS runtime skill repository focused: remove blocked default
+        # bundled categories from the active skills tree.
+        for blocked_cat in autonomous-ai-agents data-science email general mlops smart-home social-media software-development; do
+            rm -rf "$HERMES_HOME/skills/$blocked_cat"
+        done
     fi
 
     # Apply bootstrap credentials if provided by the installer UI

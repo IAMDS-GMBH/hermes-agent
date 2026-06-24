@@ -106,6 +106,30 @@ _REMOTE_ENV_BACKENDS = frozenset(
     {"docker", "singularity", "modal", "ssh", "daytona"}
 )
 _secret_capture_callback = None
+_BLOCKED_SKILL_CATEGORIES = frozenset(
+    {
+        "autonomous-ai-agents",
+        "data-science",
+        "email",
+        "general",
+        "mlops",
+        "smart-home",
+        "social-media",
+        "software-development",
+    }
+)
+
+
+def _normalize_skill_category(value: str | None) -> str:
+    return (value or "").strip().lower().replace("_", "-")
+
+
+def _is_blocked_skill_category(value: str | None) -> bool:
+    return _normalize_skill_category(value) in _BLOCKED_SKILL_CATEGORIES
+
+
+def _is_blocked_skill_path(skill_path: Path) -> bool:
+    return _is_blocked_skill_category(_get_category_from_path(skill_path))
 
 
 def _skill_lookup_path_error(name: str) -> Optional[str]:
@@ -621,6 +645,8 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
         for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
             if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
                 continue
+            if _is_blocked_skill_path(skill_md):
+                continue
 
             skill_dir = skill_md.parent
 
@@ -1017,9 +1043,13 @@ def skill_view(
             # at the top of the dir).
             direct_path = search_dir / name
             if direct_path.is_dir() and (direct_path / "SKILL.md").exists():
-                _record(direct_path, direct_path / "SKILL.md")
+                direct_md = direct_path / "SKILL.md"
+                if not _is_blocked_skill_path(direct_md):
+                    _record(direct_path, direct_md)
             elif direct_path.with_suffix(".md").exists():
-                _record(None, direct_path.with_suffix(".md"))
+                direct_md = direct_path.with_suffix(".md")
+                if not _is_blocked_skill_path(direct_md):
+                    _record(None, direct_md)
 
             # Strategy 1b: categorized form for plugin namespace fall-through
             # (e.g., a "myplugin:explore" name with no plugin registered also
@@ -1027,9 +1057,13 @@ def skill_view(
             if local_category_name:
                 categorized_path = search_dir / local_category_name
                 if categorized_path.is_dir() and (categorized_path / "SKILL.md").exists():
-                    _record(categorized_path, categorized_path / "SKILL.md")
+                    categorized_md = categorized_path / "SKILL.md"
+                    if not _is_blocked_skill_path(categorized_md):
+                        _record(categorized_path, categorized_md)
                 elif categorized_path.with_suffix(".md").exists():
-                    _record(None, categorized_path.with_suffix(".md"))
+                    categorized_md = categorized_path.with_suffix(".md")
+                    if not _is_blocked_skill_path(categorized_md):
+                        _record(None, categorized_md)
 
             # Strategy 2: recursive by directory name (catches nested skills
             # like "foundations/runtime/explore-codebase" called by bare name),
@@ -1037,6 +1071,8 @@ def skill_view(
             # frontmatter name, so `skill_view(name)` must accept it too even
             # when the on-disk directory is a shorter category/alias.
             for found_skill_md in iter_skill_index_files(search_dir, "SKILL.md"):
+                if _is_blocked_skill_path(found_skill_md):
+                    continue
                 if found_skill_md.parent.name == name:
                     _record(found_skill_md.parent, found_skill_md)
                     continue
@@ -1050,7 +1086,7 @@ def skill_view(
 
             # Strategy 3: legacy flat <name>.md files anywhere under the dir.
             for found_md in search_dir.rglob(f"{name}.md"):
-                if found_md.name != "SKILL.md":
+                if found_md.name != "SKILL.md" and not _is_blocked_skill_path(found_md):
                     _record(None, found_md)
 
         if len(candidates) > 1:

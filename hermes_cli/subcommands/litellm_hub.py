@@ -17,7 +17,7 @@ def build_litellm_hub_parser(subparsers, *, cmd_litellm_hub: Callable) -> None:
     )
     subs = parser.add_subparsers(dest="litellm_hub_action")
 
-    agents = subs.add_parser("agents", help="List public agents from /public/agent_hub")
+    agents = subs.add_parser("agents", help="List agents from /litellm/v1/agents")
     agents.add_argument("--limit", type=int, default=50, help="Maximum entries to print")
     agents.add_argument("--json", action="store_true", help="Output JSON")
 
@@ -40,4 +40,3 @@ def build_litellm_hub_parser(subparsers, *, cmd_litellm_hub: Callable) -> None:
     )
 
     parser.set_defaults(func=cmd_litellm_hub)
-

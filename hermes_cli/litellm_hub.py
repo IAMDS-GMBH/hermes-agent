@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterable, List
 
-from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
+from agent.litellm_hub_client import (
+    fetch_litellm_agents,
+    fetch_litellm_hub_json,
+    resolve_litellm_hub_settings,
+)
 
 
 def _iter_items(payload: Any) -> List[Dict[str, Any]]:
@@ -61,10 +65,18 @@ def _print_agents(items: List[Dict[str, Any]]) -> int:
         return 0
     print("LiteLLM Agent Hub")
     for item in items:
-        name = str(item.get("name") or item.get("agent_name") or item.get("id") or "<unnamed>").strip()
-        description = str(item.get("description", "")).strip()
-        url = str(item.get("url", "")).strip()
-        version = str(item.get("version", "")).strip()
+        card = item.get("agent_card_params") if isinstance(item.get("agent_card_params"), dict) else {}
+        name = str(
+            item.get("name")
+            or item.get("agent_name")
+            or card.get("name")
+            or item.get("id")
+            or item.get("agent_id")
+            or "<unnamed>"
+        ).strip()
+        description = str(item.get("description") or card.get("description") or "").strip()
+        url = str(item.get("url") or card.get("url") or "").strip()
+        version = str(item.get("version") or card.get("version") or "").strip()
         tail = " · ".join([part for part in (version, url) if part])
         print(f"- {name}" + (f" ({tail})" if tail else ""))
         if description:
@@ -119,10 +131,9 @@ def litellm_hub_command(args: Any) -> int:
         return _print_json(payload)
 
     # Default: agents
-    payload, err = fetch_litellm_hub_json("agent_hub", require_auth=True)
+    payload, err = fetch_litellm_agents()
     if err:
         print(f"Error: {err}")
         return 1
     items = _limit(_iter_items(payload), limit)
     return _print_json(items if as_json else {"items": items}) if as_json else _print_agents(items)
-

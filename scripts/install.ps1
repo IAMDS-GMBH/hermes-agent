@@ -2403,6 +2403,12 @@ You are Hermes, an AI agent originally developed by Nous Research and extended a
         }
     }
 
+    # Keep AIMDS runtime skill repository focused: remove blocked default
+    # bundled categories from the active skills tree.
+    foreach ($blockedCat in @('autonomous-ai-agents', 'data-science', 'email', 'general', 'mlops', 'smart-home', 'social-media', 'software-development')) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path "$HermesHome\skills" $blockedCat)
+    }
+
     # Apply bootstrap credentials if provided by the installer UI
     Apply-BootstrapCredentials
 }
