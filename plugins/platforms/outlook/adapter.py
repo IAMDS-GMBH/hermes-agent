@@ -215,14 +215,14 @@ class OutlookAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        auth_mode = _outlook_auth_mode(self._config)
+        auth_mode = _outlook_auth_mode(self.config)
         if auth_mode == "auto":
             auth_mode = (
                 "app"
                 if all([self._tenant_id, self._client_id, self._client_secret, self._mailbox])
                 else "delegated"
             )
-        extra = self._config.extra or {}
+        extra = self.config.extra or {}
         logger.info("[Outlook] Using auth mode: %s", auth_mode)
 
         if auth_mode == "delegated":
