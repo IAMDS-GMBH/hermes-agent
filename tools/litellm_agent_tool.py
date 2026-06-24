@@ -127,6 +127,40 @@ def _extract_agent_content(data: Any) -> str:
     # JSON-RPC shape
     result = data.get("result")
     if isinstance(result, dict):
+        # A2A canonical result: task/message with parts/artifacts
+        if result.get("kind") == "task":
+            task_id = str(result.get("id") or "")
+            status = result.get("status") if isinstance(result.get("status"), dict) else {}
+            state = str(status.get("state") or "")
+            artifacts = result.get("artifacts") if isinstance(result.get("artifacts"), list) else []
+            texts: list[str] = []
+            for artifact in artifacts:
+                if not isinstance(artifact, dict):
+                    continue
+                parts = artifact.get("parts") if isinstance(artifact.get("parts"), list) else []
+                for part in parts:
+                    if not isinstance(part, dict):
+                        continue
+                    text = part.get("text")
+                    if isinstance(text, str) and text.strip():
+                        texts.append(text)
+            if texts:
+                return "\n\n".join(texts)
+            if task_id and state:
+                return f"Task {task_id} state={state} (no text artifact yet)"
+
+        if result.get("kind") == "message":
+            parts = result.get("parts") if isinstance(result.get("parts"), list) else []
+            texts = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    texts.append(text)
+            if texts:
+                return "\n\n".join(texts)
+
         # OpenAI-like nested in JSON-RPC result
         try:
             content = (
@@ -203,14 +237,17 @@ def call_litellm_agent(
 
     full_message = f"{context.strip()}\n\n{message}".strip() if context.strip() else message
 
-    # A2A endpoint expects JSON-RPC 2.0 envelope.
+    # LiteLLM A2A expects JSON-RPC 2.0 with method `message/send`.
     payload = {
         "jsonrpc": "2.0",
         "id": f"hermes-{int(time.time() * 1000)}",
-        "method": "chat/completions",
+        "method": "message/send",
         "params": {
-            "messages": [{"role": "user", "content": full_message}],
-            "stream": False,
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": full_message}],
+                "messageId": f"msg-{int(time.time() * 1000)}",
+            }
         },
     }
     headers: dict[str, str] = {"Content-Type": "application/json"}

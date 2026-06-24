@@ -8,17 +8,15 @@ fn main() {
     // `option_env!()` macro to default the install-script reference.
     // Precedence (matches install.ps1's own arg precedence): commit > branch.
     //
-    // The COMMIT pin is opt-in. By default a dev build pins ONLY the branch,
-    // so the produced installer follows that branch's HEAD at install time
-    // (tolerant of fast-forwards/new commits, and never references a SHA the
-    // local checkout hasn't pushed). Set HERMES_BUILD_PIN_COMMIT to bake an
-    // immutable commit pin for reproducible/release installers.
+    // Commit pin is now default. By default we pin to the checkout's current
+    // HEAD commit so every built installer points to an immutable revision.
+    // HERMES_BUILD_PIN_COMMIT still overrides this (accepts SHA/tag/branch).
     //
     // Commit pin resolution:
-    //   - HERMES_BUILD_PIN_COMMIT, if set and non-empty. Accepts a SHA, tag,
-    //     or branch name; resolved to an immutable SHA via `git rev-parse`
-    //     when possible, else used verbatim if it already looks like a SHA.
-    //   - Otherwise: NO commit pin (branch-follow is the default).
+    //   1. HERMES_BUILD_PIN_COMMIT, if set and non-empty. Accepts a SHA, tag,
+    //      or branch name; resolved to an immutable SHA via `git rev-parse`
+    //      when possible, else used verbatim if it already looks like a SHA.
+    //   2. Fallback: current checkout HEAD commit (`git rev-parse --verify HEAD`).
     //
     // Branch pin resolution:
     //   1. HERMES_BUILD_PIN_BRANCH, if set and non-empty.
@@ -46,8 +44,7 @@ fn main() {
         match &commit {
             Some(_) => println!("cargo:warning=hermes-bootstrap: pinning to branch {b}"),
             None => println!(
-                "cargo:warning=hermes-bootstrap: following branch {b} HEAD (no commit pin; \
-                 set HERMES_BUILD_PIN_COMMIT for an immutable pin)"
+                "cargo:warning=hermes-bootstrap: pinning to branch {b} (commit pin unavailable)"
             ),
         }
     }
@@ -101,19 +98,40 @@ fn main() {
 }
 
 fn resolve_commit_pin() -> Option<String> {
-    // Commit pinning is OPT-IN. Only bake a commit when the caller explicitly
-    // asks for one via HERMES_BUILD_PIN_COMMIT. With no env var, we return
-    // None and the installer follows the branch HEAD at install time.
-    let requested = std::env::var("HERMES_BUILD_PIN_COMMIT").ok()?;
-    let requested = requested.trim();
-    if requested.is_empty() {
-        return None;
+    // Explicit override first.
+    if let Ok(requested_raw) = std::env::var("HERMES_BUILD_PIN_COMMIT") {
+        let requested = requested_raw.trim();
+        if !requested.is_empty() {
+            // Resolve the request (which may be a SHA, tag, or branch name) to
+            // an immutable commit SHA. `^{commit}` dereferences tags.
+            if let Ok(out) = Command::new("git")
+                .args(["rev-parse", "--verify", &format!("{requested}^{{commit}}")])
+                .output()
+            {
+                if out.status.success() {
+                    if let Ok(s) = String::from_utf8(out.stdout) {
+                        let s = s.trim().to_string();
+                        if !s.is_empty() {
+                            return Some(s);
+                        }
+                    }
+                }
+            }
+            // Couldn't resolve via git (e.g. building outside checkout). Accept
+            // literal only if it already looks like a SHA.
+            if is_sha(requested) {
+                return Some(requested.to_string());
+            }
+            panic!(
+                "HERMES_BUILD_PIN_COMMIT={requested:?} could not be resolved to a commit \
+                 (git rev-parse failed and it is not a valid SHA)"
+            );
+        }
     }
-    // Resolve the request (which may be a SHA, tag, or branch name) to an
-    // immutable commit SHA so the baked pin is reproducible. `^{commit}`
-    // dereferences tags to the commit they point at.
+
+    // Default: pin to local HEAD commit.
     if let Ok(out) = Command::new("git")
-        .args(["rev-parse", "--verify", &format!("{requested}^{{commit}}")])
+        .args(["rev-parse", "--verify", "HEAD"])
         .output()
     {
         if out.status.success() {
@@ -125,16 +143,7 @@ fn resolve_commit_pin() -> Option<String> {
             }
         }
     }
-    // Couldn't resolve via git (e.g. building outside a checkout). Accept the
-    // literal value only if it already looks like a SHA; otherwise fail loud
-    // rather than bake an unresolvable ref into the binary.
-    if is_sha(requested) {
-        return Some(requested.to_string());
-    }
-    panic!(
-        "HERMES_BUILD_PIN_COMMIT={requested:?} could not be resolved to a commit \
-         (git rev-parse failed and it is not a valid SHA)"
-    );
+    None
 }
 
 /// True if `s` looks like an abbreviated-or-full git SHA (7..=40 hex chars).
