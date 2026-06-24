@@ -1,0 +1,61 @@
+# Beispiel ~/.hermes/config.yaml — AIMDS Office-Worker Loadout
+# Pro Kunde anpassen (LiteLLM-URL, Keys, MCP-Server). Werte mit <…> ersetzen.
+# Hinweis: Keys/Secrets gehören in ~/.hermes/.env, nicht hier rein.
+
+# --- Inferenz über LiteLLM (zentraler Endpoint) -----------------------------
+# Modell-Routing, Fallbacks, Spend-Tracking macht LiteLLM zentral.
+model: "<litellm-model-name>"            # z.B. der AIMDS-Suite-Modellname
+provider: openai_compatible
+base_url: "https://<litellm-host>/v1"
+# api_key: via .env (LITELLM_API_KEY) — pro User ein Key (für Memory-Mandanten!)
+
+# --- Goal-Loop (selbst-verifizierend) ---------------------------------------
+goals:
+  max_turns: 10            # Office-Tasks: niedrig halten, lieber /goal resume
+
+auxiliary:
+  goal_judge:              # billiges, schnelles Modell für den Judge (1x/Turn)
+    provider: openai_compatible
+    base_url: "https://<litellm-host>/v1"
+    model: "<litellm-fast-model>"
+
+# --- Memory (siehe memory/MEMORY-ARCHITEKTUR.md) ----------------------------
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  write_approval: true     # Enterprise: Memory-Writes erst freigeben
+skills:
+  write_approval: true     # Enterprise: Skill-Writes erst freigeben
+
+# --- Delegation (Default: Single-Agent; Subagents nur für parallele Reads) ---
+delegation:
+  max_concurrent_children: 3
+  max_spawn_depth: 1       # flach lassen
+  model: "<litellm-fast-model>"   # günstigeres Modell für Subagents
+  provider: openai_compatible
+  base_url: "https://<litellm-host>/v1"
+
+# --- Tool Gateway: NICHT Nous-Tools nutzen (Datenresidenz) ------------------
+# Web/Image/TTS/Browser laufen sonst über Nous-Infra. Stattdessen eigene
+# Backends über MCP/LiteLLM. Daher use_gateway hier nicht aktivieren.
+
+# --- Zentrales Memory: LiteLLM /memory (user-/team-scoped, PostgreSQL) -------
+# CRUD-Endpoint /v1/memory; Scoping über den API-Key (user_id/team_id).
+# Anbindung an Hermes über einen dünnen MCP-Wrapper (Empfehlung), der
+# memory_get/list/upsert/delete auf /v1/memory mappt. Siehe MEMORY-ARCHITEKTUR.md.
+
+# --- MCP-Server über den LiteLLM MCP Gateway --------------------------------
+# Der Gateway frontet AIMDS-AI-KB und den /memory-Wrapper.
+mcp:
+  servers:
+    aimds-gateway:
+      transport: http
+      url: "https://<litellm-host>/mcp"
+      # auth via .env (User-Key → scoped Memory & Permissions)
+      # exponiert u.a.: kb_search, kb_get_topic, kb_get_related,
+      #                 memory_get, memory_list, memory_upsert, memory_delete
+
+# --- Cron / Automationen ----------------------------------------------------
+cron:
+  wrap_response: true
+# Gateway-Daemon separat installieren: `hermes gateway install`

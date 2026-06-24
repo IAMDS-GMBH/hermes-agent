@@ -2240,6 +2240,18 @@ function Sync-AimdsCustomAssets {
         }
     }
 
+    $hiddenSkillsSrc = Join-Path $installerDir 'skills-hidden'
+    if (Test-Path $hiddenSkillsSrc) {
+        $hiddenItems = Get-ChildItem -Path $hiddenSkillsSrc -ErrorAction SilentlyContinue
+        if ($hiddenItems) {
+            $hiddenDest = Join-Path $HermesHome 'skills\.archive\aimds-loadout'
+            New-Item -ItemType Directory -Force -Path $hiddenDest | Out-Null
+            Write-Info "Syncing AIMDS hidden skill pack from $hiddenSkillsSrc ..."
+            Copy-Item -Path "$hiddenSkillsSrc\*" -Destination $hiddenDest -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Success "AIMDS hidden skill pack synced to $hiddenDest"
+        }
+    }
+
     $scriptsSrc = Join-Path $installerDir 'scripts'
     if (Test-Path $scriptsSrc) {
         $scriptItems = Get-ChildItem -Path $scriptsSrc -ErrorAction SilentlyContinue

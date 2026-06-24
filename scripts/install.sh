@@ -2048,11 +2048,12 @@ resolve_aimds_installer_dir() {
 }
 
 sync_aimds_custom_assets() {
-    local installer_dir skills_src scripts_src
+    local installer_dir skills_src hidden_skills_src scripts_src
     installer_dir="$(resolve_aimds_installer_dir 2>/dev/null || true)"
     [ -n "$installer_dir" ] || return 0
 
     skills_src="$installer_dir/skills"
+    hidden_skills_src="$installer_dir/skills-hidden"
     scripts_src="$installer_dir/scripts"
 
     if [ -d "$skills_src" ] && [ -n "$(find "$skills_src" -mindepth 1 -print -quit 2>/dev/null)" ]; then
@@ -2064,6 +2065,19 @@ sync_aimds_custom_assets() {
             cp -R "$skills_src/"* "$HERMES_HOME/skills/" 2>/dev/null || true
         fi
         log_success "AIMDS custom skills synced"
+    fi
+
+    # Copy staged-but-inactive AIMDS skills/docs into .archive so they ship with
+    # the installer but do not register as active skills yet.
+    if [ -d "$hidden_skills_src" ] && [ -n "$(find "$hidden_skills_src" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        log_info "Syncing AIMDS hidden skill pack from $hidden_skills_src ..."
+        mkdir -p "$HERMES_HOME/skills/.archive/aimds-loadout"
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$hidden_skills_src/" "$HERMES_HOME/skills/.archive/aimds-loadout/"
+        else
+            cp -R "$hidden_skills_src/"* "$HERMES_HOME/skills/.archive/aimds-loadout/" 2>/dev/null || true
+        fi
+        log_success "AIMDS hidden skill pack synced to ~/.hermes/skills/.archive/aimds-loadout"
     fi
 
     if [ -d "$scripts_src" ] && [ -n "$(find "$scripts_src" -mindepth 1 -print -quit 2>/dev/null)" ]; then
