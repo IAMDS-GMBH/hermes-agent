@@ -1949,6 +1949,96 @@ print(json.dumps({
     }
 }
 
+function Invoke-McpReload {
+    # Best-effort MCP reload at install finalization. Mirrors runtime reload.mcp
+    # server actions (shutdown + discover) but has no active session snapshot to
+    # refresh during install.
+    $configPath = "$HermesHome\config.yaml"
+    if (-not (Test-Path $configPath)) {
+        Write-Info "Skipping MCP reload: $configPath not found"
+        return $true
+    }
+
+    $pythonExe = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { "python" }
+    if (-not (Test-Path $pythonExe) -and $pythonExe -ne "python") {
+        Write-Warn "Skipping MCP reload: $pythonExe not found"
+        return $true
+    }
+
+    Write-Info "Reloading MCP servers..."
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    try {
+        $pyScript = @'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "config missing"}))
+    raise SystemExit(0)
+
+try:
+    import yaml
+except Exception as exc:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "PyYAML unavailable ({})".format(exc)}))
+    raise SystemExit(0)
+
+try:
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+except Exception as exc:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "cannot parse config.yaml ({})".format(exc)}))
+    raise SystemExit(0)
+
+servers = cfg.get("mcp_servers")
+if not isinstance(servers, dict) or not servers:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "no configured servers"}))
+    raise SystemExit(0)
+
+from tools.mcp_tool import discover_mcp_tools, shutdown_mcp_servers
+shutdown_mcp_servers()
+discover_mcp_tools()
+print(json.dumps({"ok": True, "reloaded": True, "count": len(servers)}))
+'@
+
+        Push-Location $InstallDir
+        try {
+            & $pythonExe -c $pyScript $configPath 1> $tmpOut 2> $tmpErr
+        } finally {
+            Pop-Location
+        }
+        $exit = $LASTEXITCODE
+        $outText = Get-Content $tmpOut -Raw -ErrorAction SilentlyContinue
+        $errText = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
+        if ($exit -ne 0) {
+            if ($errText) {
+                Write-Warn "MCP reload failed: $errText"
+            } else {
+                Write-Warn "MCP reload failed (exit $exit)"
+            }
+            return $true
+        }
+
+        if (-not $outText) {
+            Write-Warn "MCP reload produced no output"
+            return $true
+        }
+
+        $report = $outText | ConvertFrom-Json
+        if ($report.reloaded) {
+            Write-Success "MCP reload complete ($($report.count) configured)"
+        } elseif ($report.reason) {
+            Write-Info "MCP reload skipped: $($report.reason)"
+        } else {
+            Write-Info "MCP reload skipped"
+        }
+        return $true
+    } finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr
+    }
+}
+
 function Set-PathVariable {
     Write-Info "Setting up hermes command..."
     
@@ -3620,6 +3710,7 @@ $InstallStages += @(
     @{ Name = "path";             Title = "Adding Hermes to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }
     @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates" }
     @{ Name = "mcp-check";        Title = "Checking configured MCP servers";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-McpCheck" }
+    @{ Name = "mcp-reload";       Title = "Reloading configured MCP servers";     Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-McpReload" }
     @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks" }
     @{ Name = "bootstrap-marker"; Title = "Marking install complete";              Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-BootstrapMarker" }
     # Interactive stages.  In non-interactive mode these become no-ops; the
@@ -3666,6 +3757,7 @@ function Stage-McpCheck         {
         $script:_StageSkippedReason = "One or more configured MCP servers failed the connectivity check"
     }
 }
+function Stage-McpReload        { Invoke-McpReload | Out-Null }
 function Stage-PlatformSdks     { Resolve-UvCmd; Install-PlatformSdks }
 function Stage-BootstrapMarker  { Write-BootstrapMarker }
 function Stage-Configure        { Invoke-SetupWizard }

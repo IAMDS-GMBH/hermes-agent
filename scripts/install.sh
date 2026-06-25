@@ -268,7 +268,7 @@ emit_manifest() {
     if [ "$INCLUDE_DESKTOP" = true ]; then
         desktop_stage='{"name":"desktop","title":"Build desktop app","category":"runtime","needs_user_input":false},'
     fi
-    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"mcp-check","title":"Check configured MCP servers","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
+    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"mcp-check","title":"Check configured MCP servers","category":"configuration","needs_user_input":false},{"name":"mcp-reload","title":"Reload configured MCP servers","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
     printf '\n'
 }
 
@@ -2431,6 +2431,109 @@ PYEOF
     return 0
 }
 
+reload_configured_mcp_servers() {
+    # Best-effort MCP reload at install finalization. Mirrors runtime reload.mcp
+    # server actions (shutdown + discover) but has no active session snapshot to
+    # refresh during install.
+    local config_path="$HERMES_HOME/config.yaml"
+    if [ ! -f "$config_path" ]; then
+        log_info "Skipping MCP reload: $config_path not found"
+        return 0
+    fi
+
+    local py=""
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        py="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        py="$(command -v python)"
+    fi
+    if [ -z "$py" ]; then
+        log_warn "Skipping MCP reload: no Python interpreter found"
+        return 0
+    fi
+
+    log_info "Reloading MCP servers..."
+    local report rc
+    report="$(
+        cd "$INSTALL_DIR" && "$py" - "$config_path" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "config missing"}))
+    raise SystemExit(0)
+
+try:
+    import yaml
+except Exception as exc:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "PyYAML unavailable ({})".format(exc)}))
+    raise SystemExit(0)
+
+try:
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+except Exception as exc:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "cannot parse config.yaml ({})".format(exc)}))
+    raise SystemExit(0)
+
+servers = cfg.get("mcp_servers")
+if not isinstance(servers, dict) or not servers:
+    print(json.dumps({"ok": True, "reloaded": False, "reason": "no configured servers"}))
+    raise SystemExit(0)
+
+from tools.mcp_tool import discover_mcp_tools, shutdown_mcp_servers
+shutdown_mcp_servers()
+discover_mcp_tools()
+print(json.dumps({"ok": True, "reloaded": True, "count": len(servers)}))
+PYEOF
+    )"
+    rc=$?
+
+    if [ "$rc" -ne 0 ]; then
+        log_warn "MCP reload failed (exit $rc)"
+        return 0
+    fi
+
+    if [ -z "$report" ]; then
+        log_warn "MCP reload produced no output"
+        return 0
+    fi
+
+    local _summary
+    _summary="$(
+        printf '%s' "$report" | "$py" - <<'PYEOF' 2>/dev/null || true
+import json
+import sys
+txt = sys.stdin.read()
+try:
+    data = json.loads(txt)
+except Exception:
+    print("")
+    raise SystemExit(0)
+if data.get("reloaded"):
+    print("reloaded {}".format(data.get("count", 0)))
+elif data.get("reason"):
+    print("skipped: {}".format(data.get("reason")))
+else:
+    print("skipped")
+PYEOF
+    )"
+
+    if [ -n "$_summary" ]; then
+        if [ "${_summary#reloaded }" != "$_summary" ]; then
+            log_ok "MCP reload complete (${_summary#reloaded } configured)"
+        else
+            log_info "MCP reload $_summary"
+        fi
+    else
+        log_info "MCP reload completed"
+    fi
+    return 0
+}
+
 find_system_browser() {
     # Prefer a user-specified browser path, then common Linux/macOS Chrome and
     # Chromium command names.  Arch-family distributions commonly ship plain
@@ -4178,6 +4281,12 @@ run_stage_body() {
             require_install_dir
             check_configured_mcp_servers
             ;;
+        mcp-reload)
+            detect_os
+            resolve_install_layout
+            require_install_dir
+            reload_configured_mcp_servers
+            ;;
         setup)
             detect_os
             resolve_install_layout
@@ -4277,6 +4386,7 @@ main() {
     setup_path
     copy_config_templates
     check_configured_mcp_servers
+    reload_configured_mcp_servers
     run_setup_wizard
     maybe_start_gateway
 
