@@ -1906,6 +1906,9 @@ for name, spec in servers.items():
                 if k is None or v is None:
                     continue
                 headers[str(k)] = str(_expand_env(v))
+        if not any(str(k).lower() == "accept" for k in headers):
+            transport = str(spec.get("transport") or "").strip().lower()
+            headers["Accept"] = "text/event-stream" if transport == "sse" else "application/json, text/event-stream;q=0.9, */*;q=0.8"
         req = urllib.request.Request(str(_expand_env(url)), headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
@@ -2243,8 +2246,9 @@ function Apply-BootstrapCredentials {
             $memoryEntry = @"
   companyMemory:
     url: $mcpServerUrl
-    headers:
-      Authorization: "Bearer $bootstrapApiKey"
+                transport: sse
+                headers:
+                  Authorization: "Bearer $bootstrapApiKey"
     timeout: 180
     connect_timeout: 60
     trusted: true
