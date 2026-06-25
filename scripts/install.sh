@@ -2273,6 +2273,8 @@ check_configured_mcp_servers() {
     local report rc
     report="$("$py" - "$config_path" <<'PYEOF'
 import json
+import os
+import re
 import shutil
 import sys
 import urllib.error
@@ -2313,6 +2315,30 @@ if not isinstance(servers, dict) or not servers:
     print(json.dumps({"ok": True, "checked": 0, "failed": 0, "results": []}))
     raise SystemExit(0)
 
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in {'"', "'"}:
+            val = val[1:-1]
+        os.environ.setdefault(key, val)
+
+_load_dotenv(config_path.with_name(".env"))
+_env_var_pattern = re.compile(r"\$\{([^}]+)\}")
+
+def _expand_env(value):
+    if isinstance(value, str):
+        return _env_var_pattern.sub(lambda m: os.environ.get(m.group(1), m.group(0)), value)
+    return value
+
 results = []
 failed = 0
 for name, spec in servers.items():
@@ -2336,7 +2362,14 @@ for name, spec in servers.items():
             ok = False
 
     if url:
-        req = urllib.request.Request(url, method="GET")
+        headers = {}
+        raw_headers = spec.get("headers")
+        if isinstance(raw_headers, dict):
+            for k, v in raw_headers.items():
+                if k is None or v is None:
+                    continue
+                headers[str(k)] = str(_expand_env(v))
+        req = urllib.request.Request(str(_expand_env(url)), headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
                 checks.append("url ok (HTTP {})".format(getattr(resp, 'status', 200)))

@@ -37,10 +37,6 @@ pub struct CredentialsData {
     pub model_name: String,
     pub model_names: Option<Vec<String>>,
     pub memory_api_url: Option<String>,
-    pub email_address: Option<String>,
-    pub email_password: Option<String>,
-    pub imap_server: Option<String>,
-    pub smtp_server: Option<String>,
 }
 
 /// Frontend → Rust: kick off the install.

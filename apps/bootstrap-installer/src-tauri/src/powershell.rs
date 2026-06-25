@@ -76,18 +76,6 @@ pub async fn run_script(
         if let Some(url) = &creds.memory_api_url {
             cmd.env("HERMES_BOOTSTRAP_MEMORY_API_URL", url);
         }
-        if let Some(email) = &creds.email_address {
-            cmd.env("HERMES_BOOTSTRAP_EMAIL", email);
-        }
-        if let Some(password) = &creds.email_password {
-            cmd.env("HERMES_BOOTSTRAP_EMAIL_PASSWORD", password);
-        }
-        if let Some(imap) = &creds.imap_server {
-            cmd.env("HERMES_BOOTSTRAP_IMAP_SERVER", imap);
-        }
-        if let Some(smtp) = &creds.smtp_server {
-            cmd.env("HERMES_BOOTSTRAP_SMTP_SERVER", smtp);
-        }
     }
 
     cmd.stdin(Stdio::null())

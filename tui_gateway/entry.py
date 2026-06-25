@@ -293,18 +293,45 @@ def main():
     if _has_mcp_servers:
         def _discover_mcp_background() -> None:
             try:
-                from tools.mcp_tool import discover_mcp_tools
-                discover_mcp_tools()
-                try:
-                    # Discovery may finish after the first session's agent was
-                    # built; refresh cached session tool snapshots so MCP tools
-                    # become available without requiring manual "Reload MCP".
-                    server._refresh_cached_agent_tools()
-                except Exception:
-                    logger.debug(
-                        "Failed to refresh cached sessions after MCP discovery",
-                        exc_info=True,
-                    )
+                from tools.mcp_tool import discover_mcp_tools, get_mcp_status
+
+                retry_delays = (0.0, 3.0, 8.0)
+                for attempt, delay_s in enumerate(retry_delays, start=1):
+                    if delay_s > 0:
+                        time.sleep(delay_s)
+
+                    discover_mcp_tools()
+                    try:
+                        # Discovery may finish after the first session's agent was
+                        # built; refresh cached session tool snapshots so MCP tools
+                        # become available without requiring manual "Reload MCP".
+                        server._refresh_cached_agent_tools()
+                    except Exception:
+                        logger.debug(
+                            "Failed to refresh cached sessions after MCP discovery",
+                            exc_info=True,
+                        )
+
+                    try:
+                        status = get_mcp_status()
+                        pending = [
+                            row.get("name", "<unknown>")
+                            for row in status
+                            if not row.get("disabled") and not row.get("connected")
+                        ]
+                    except Exception:
+                        pending = []
+
+                    if not pending:
+                        break
+
+                    if attempt < len(retry_delays):
+                        logger.info(
+                            "Background MCP discovery retry %d/%d: waiting on %s",
+                            attempt,
+                            len(retry_delays),
+                            ", ".join(pending),
+                        )
             except Exception:
                 logger.warning(
                     "Background MCP tool discovery failed", exc_info=True

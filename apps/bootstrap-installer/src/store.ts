@@ -23,10 +23,6 @@ export interface CredentialsData {
   baseUrl: string
   modelName: string
   modelNames?: string[]
-  emailAddress?: string
-  emailPassword?: string
-  imapServer?: string
-  smtpServer?: string
 }
 
 export interface StageInfo {
@@ -275,11 +271,7 @@ export async function startInstall(opts?: { branch?: string; credentials?: Crede
           api_key: opts.credentials.apiKey,
           base_url: opts.credentials.baseUrl,
           model_name: opts.credentials.modelName,
-          model_names: opts.credentials.modelNames ?? null,
-          email_address: opts.credentials.emailAddress ?? null,
-          email_password: opts.credentials.emailPassword ?? null,
-          imap_server: opts.credentials.imapServer ?? null,
-          smtp_server: opts.credentials.smtpServer ?? null
+          model_names: opts.credentials.modelNames ?? null
         }
       : null
 
