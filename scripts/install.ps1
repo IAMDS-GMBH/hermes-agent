@@ -1670,6 +1670,7 @@ except Exception:
 
     Ensure-WebSearchDdgsDependency
     Ensure-OfficeDocumentDependencies
+    Ensure-WindowsPython3Shim
     
     Pop-Location
     
@@ -1752,6 +1753,34 @@ function Ensure-OfficeDocumentDependencies {
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "Failed to install $($dep.Spec). $($dep.Label) features may be unavailable until installed manually."
         }
+    }
+}
+
+function Ensure-WindowsPython3Shim {
+    # Some skills/tools use `python3` in examples. On Windows, that command often
+    # resolves to the Microsoft Store app alias instead of Hermes' venv Python.
+    # Create a local shim in venv\Scripts so `python3` executes python.exe from
+    # the same virtualenv whenever that directory is on PATH.
+    if ($NoVenv) {
+        Write-Info "Skipping python3 shim (-NoVenv)"
+        return
+    }
+
+    $scriptsDir = Join-Path $InstallDir "venv\Scripts"
+    $pythonExe = Join-Path $scriptsDir "python.exe"
+    $python3Cmd = Join-Path $scriptsDir "python3.cmd"
+
+    if (-not (Test-Path $pythonExe)) {
+        Write-Warn "Skipping python3 shim: $pythonExe not found"
+        return
+    }
+
+    $shim = "@echo off`r`n`"%~dp0python.exe`" %*`r`n"
+    try {
+        Set-Content -Path $python3Cmd -Value $shim -Encoding ASCII
+        Write-Success "Installed venv python3 shim: $python3Cmd"
+    } catch {
+        Write-Warn "Failed to write python3 shim ($python3Cmd): $($_.Exception.Message)"
     }
 }
 
