@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       changelog:
-        description: "Release changelog/notes (used when creating release)"
+        description: "Release changelog/notes. Use \\n for line breaks."
         required: false
         type: string
       create_release:
@@ -233,6 +233,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.tag }}
           TARGET_SHA: ${{ github.sha }}
           CHANGELOG: ${{ github.event.inputs.changelog }}
@@ -243,7 +244,9 @@ jobs:
           else
             notes="Automated bootstrap installer release from workflow_dispatch."
             if [ -n "${CHANGELOG:-}" ]; then
-              notes="$CHANGELOG"
+              # workflow_dispatch string inputs are single-line in UI.
+              # Support escaped newlines (\n) so users can provide multi-line notes.
+              notes="$(printf '%b' "$CHANGELOG")"
             fi
             gh release create "$TAG" \
               --draft \
@@ -260,6 +263,7 @@ jobs:
       - name: Upload installers to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
