@@ -54,7 +54,7 @@ If multiple PRs target same integration category (providers/backends/notifiers),
 ## Tooling and architecture rules
 
 - Keep model-tool cross-references out of static schema descriptions when referenced tools may be absent; add dynamic hints in `get_tool_definitions()` logic.
-- For MCP-backed memory/tools, call on demand: when users ask about projects or personal information, call the configured memory MCP toolset first; do not run memory MCP calls on every generic turn.
+- For MCP-backed memory/tools, call on demand: when users ask about projects or personal information, call the configured remoteMCP server toolset first (specially the memory read/write tools); do not run memory MCP calls on every generic turn.
 - For gateway running-session controls, ensure approval/control commands bypass both message guards where required.
 - Avoid wiring dead/unused code into live paths without end-to-end validation.
 
@@ -65,7 +65,6 @@ If multiple PRs target same integration category (providers/backends/notifiers),
 
 ## Context and instruction files
 
-- Project-context priority is: `.hermes.md`/`HERMES.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`.
 - Keep this file concise and high-signal; move long rationale and examples to docs.
 
 ## Known non-negotiables
