@@ -57,10 +57,6 @@ CONFIGURABLE_TOOLSETS = [
     ("terminal",        "💻 Terminal & Processes",      "terminal, process"),
     ("file",            "📁 File Operations",           "read, write, patch, search"),
     ("code_execution",  "⚡ Code Execution",            "execute_code"),
-    ("vision",          "👁️  Vision / Image Analysis",  "vision_analyze"),
-    ("video",           "🎬 Video Analysis",            "video_analyze (requires video-capable model)"),
-    ("image_gen",       "🎨 Image Generation",          "image_generate"),
-    ("video_gen",       "🎬 Video Generation",          "video_generate (text-to-video + image-to-video)"),
     ("moa",             "🧠 Mixture of Agents",         "mixture_of_agents"),
     ("tts",             "🔊 Text-to-Speech",            "text_to_speech"),
     ("skills",          "📚 Skills",                    "list, view, manage"),
@@ -72,7 +68,6 @@ CONFIGURABLE_TOOLSETS = [
     ("delegation",      "👥 Task Delegation",           "delegate_task"),
     ("cronjob",         "⏰ Cron Jobs",                 "create/list/update/pause/resume/run, with optional attached skills"),
     ("messaging",       "📨 Cross-Platform Messaging",  "send_message"),
-    ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
     ("computer_use",     "🖱️  Computer Use (macOS)",     "background desktop control via cua-driver"),
     ("outlook",          "📧 Outlook / Microsoft 365",   "read emails on demand via Microsoft Graph"),
     ("litellm_agents",   "🤖 LiteLLM Agents (A2A)",      "call_litellm_agent, list_litellm_active_agents"),
@@ -169,13 +164,20 @@ def _get_effective_configurable_toolsets():
     Without the dedupe, ``hermes tools`` → "reconfigure existing" would
     list the same toolset twice.
     """
-    result = list(CONFIGURABLE_TOOLSETS)
+    from toolsets import HARD_DISABLED_TOOLSETS
+
+    result = [
+        entry for entry in CONFIGURABLE_TOOLSETS
+        if entry[0] not in HARD_DISABLED_TOOLSETS
+    ]
     seen = {ts_key for ts_key, _, _ in result}
     try:
         from hermes_cli.plugins import discover_plugins, get_plugin_toolsets
         discover_plugins()  # idempotent — ensures plugins are loaded
         for entry in get_plugin_toolsets():
             if entry[0] in seen:
+                continue
+            if entry[0] in HARD_DISABLED_TOOLSETS:
                 continue
             seen.add(entry[0])
             result.append(entry)

@@ -38,42 +38,16 @@ _HERMES_CORE_TOOLS = [
     "read_terminal",
     # File manipulation
     "read_file", "write_file", "patch", "search_files",
-    # Vision + image generation
-    "vision_analyze", "image_generate",
     # Skills
     "skills_list", "skill_view", "skill_manage",
     # Browser automation
     # (disabled — browser tools removed from core toolset)
-    # Text-to-speech
-    "text_to_speech",
     # Planning & memory
     "todo", "memory",
-    # Session history search
-    "session_search",
     # Clarifying questions
     "clarify",
-    # Code execution + delegation
-    "execute_code", "delegate_task",
-    # Cronjob management
-    "cronjob",
-    # Cross-platform messaging (gated on gateway running via check_fn)
-    "send_message",
-    # Outlook / Microsoft 365 inbox read (gated on OUTLOOK_TENANT_ID + OUTLOOK_CLIENT_ID via check_fn)
-    "outlook_read_emails",
-    # LiteLLM A2A — call external agents registered on LiteLLM proxy (gated on base_url + active agents)
-    "call_litellm_agent", "list_litellm_active_agents",
-    # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
-    "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
-    # Kanban multi-agent coordination — only in schema when the agent is
-    # spawned as a kanban worker (HERMES_KANBAN_TASK env set) or the current
-    # profile explicitly enables the kanban toolset. Gated via check_fn in
-    # tools/kanban_tools.py.
-    "kanban_show", "kanban_list",
-    "kanban_complete", "kanban_block", "kanban_heartbeat",
-    "kanban_comment", "kanban_create", "kanban_link",
-    "kanban_unblock",
-    # Computer use (macOS, gated on cua-driver being installed via check_fn)
-    "computer_use",
+    # Code execution
+    "execute_code",
 ]
 
 # Toolsets hard-disabled at runtime across all platforms/surfaces.
@@ -82,8 +56,14 @@ _HERMES_CORE_TOOLS = [
 HARD_DISABLED_TOOLSETS = {
     "browser",
     "discord",
+    "discord_admin",
     "homeassistant",
+    "image_gen",
     "spotify",
+    "video",
+    "video_gen",
+    "vision",
+    # Keep blocked even if a config explicitly enables it.
     "x_search",
     "yuanbao",
 }
@@ -358,12 +338,11 @@ TOOLSETS = {
     # for while pairing on code and drops the rest (messaging, tts, image_gen,
     # spotify, home-assistant, cron, computer-use).
     "coding": {
-        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision",
+        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate",
         "tools": [
             "web_search", "web_extract",
             "terminal", "process", "read_terminal",
             "read_file", "write_file", "patch", "search_files",
-            "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "todo", "memory",
             "session_search", "clarify",

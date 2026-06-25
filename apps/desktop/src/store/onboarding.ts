@@ -191,9 +191,7 @@ function notifyReady(provider: string) {
 // CLI describe the same thing.
 const GATEWAY_TOOL_LABELS: Record<string, string> = {
   browser: 'browser automation',
-  image_gen: 'image generation',
   tts: 'text-to-speech',
-  video_gen: 'video generation',
   web: 'web search & extract'
 }
 
