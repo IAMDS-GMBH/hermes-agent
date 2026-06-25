@@ -80,6 +80,14 @@ jobs:
           }
           Write-Host "install.ps1 syntax OK ($($tokens.Count) tokens)"
 
+      - name: Clean bootstrap target
+        shell: pwsh
+        run: |
+          $target = "${{ github.workspace }}\apps\bootstrap-installer\src-tauri\target"
+          if (Test-Path $target) {
+            Remove-Item -LiteralPath $target -Recurse -Force
+          }
+
       - name: Build installer
         run: npm run tauri:build
         working-directory: apps/bootstrap-installer

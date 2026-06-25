@@ -192,7 +192,7 @@ def _resolve_lock_install_path(install_path: str, skill_name: str) -> Path:
 
 def _guarded_http_get(url: str, *, timeout: int = 20) -> Optional[httpx.Response]:
     """Fetch a URL with SSRF and redirect-target validation."""
-    current_url = url
+    current_url = _normalize_skill_content_url(url)
 
     for _ in range(_MAX_SKILL_FETCH_REDIRECTS + 1):
         if not is_safe_url(current_url):
@@ -225,6 +225,34 @@ def _guarded_http_get(url: str, *, timeout: int = 20) -> Optional[httpx.Response
 
     logger.warning("Skills Hub fetch exceeded redirect limit for %s", url)
     return None
+
+
+def _normalize_skill_content_url(url: str) -> str:
+    """Normalize known content-hosting URLs used by Skill Hub.
+
+    GitHub ``/blob/`` links return HTML by default. Appending ``?raw=true``
+    forces raw file bytes and keeps user-provided refs (branch/commit/tag)
+    intact.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url
+
+    host = parsed.netloc.lower()
+    if host not in {"github.com", "www.github.com"}:
+        return url
+
+    path = parsed.path or ""
+    if "/blob/" not in path:
+        return url
+
+    query = parsed.query or ""
+    if "raw=true" in query.lower():
+        return url
+
+    new_query = "raw=true" if not query else f"{query}&raw=true"
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def _validate_bundle_rel_path(rel_path: str) -> str:

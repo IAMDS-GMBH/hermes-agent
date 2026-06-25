@@ -29,6 +29,7 @@ from tools.skills_hub import (
     unified_search,
     append_audit_log,
     _skill_meta_to_dict,
+    _normalize_skill_content_url,
     quarantine_bundle,
 )
 
@@ -1039,6 +1040,19 @@ class TestUrlSource:
         assert bundle.metadata["awaiting_name"] is False
 
     @patch("tools.skills_hub.httpx.get")
+    def test_fetch_github_blob_url_appends_raw_true(self, mock_get):
+        skill_md = "---\nname: grill-me\n---\n"
+        mock_get.return_value = MagicMock(status_code=200, text=skill_md)
+
+        bundle = self._source().fetch(
+            "https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md"
+        )
+
+        assert bundle is not None
+        fetched_url = mock_get.call_args.args[0]
+        assert fetched_url.endswith("/SKILL.md?raw=true")
+
+    @patch("tools.skills_hub.httpx.get")
     def test_fetch_falls_back_to_url_directory_name(self, mock_get):
         # Frontmatter has no ``name:`` — we slug from the URL directory.
         mock_get.return_value = MagicMock(
@@ -1145,6 +1159,22 @@ class TestUrlSource:
         ]
         for name in invalid:
             assert not UrlSource._is_valid_skill_name(name), f"should reject {name!r}"
+
+
+class TestNormalizeSkillContentUrl:
+    def test_github_blob_url_gets_raw_true(self):
+        url = "https://github.com/o/r/blob/main/skills/x/SKILL.md"
+        assert _normalize_skill_content_url(url).endswith("/SKILL.md?raw=true")
+
+    def test_github_blob_url_preserves_existing_query(self):
+        url = "https://github.com/o/r/blob/main/skills/x/SKILL.md?foo=bar"
+        normalized = _normalize_skill_content_url(url)
+        assert "foo=bar" in normalized
+        assert "raw=true" in normalized
+
+    def test_non_github_url_unchanged(self):
+        url = "https://example.com/skills/x/SKILL.md"
+        assert _normalize_skill_content_url(url) == url
 
 
 class TestCheckForSkillUpdates:
