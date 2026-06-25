@@ -1803,6 +1803,7 @@ function Test-ConfiguredMcpServers {
     Write-Info "Checking configured MCP servers..."
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
+    $tmpPy = [System.IO.Path]::GetTempFileName()
     try {
         $pyScript = @'
 import json
@@ -1936,7 +1937,8 @@ print(json.dumps({
 }))
 '@
 
-        & $pythonExe -c $pyScript $configPath 1> $tmpOut 2> $tmpErr
+        Set-Content -Path $tmpPy -Value $pyScript -Encoding UTF8
+        & $pythonExe $tmpPy $configPath 1> $tmpOut 2> $tmpErr
         $exit = $LASTEXITCODE
         $outText = Get-Content $tmpOut -Raw -ErrorAction SilentlyContinue
         $errText = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
@@ -1980,7 +1982,7 @@ print(json.dumps({
         Write-Success "MCP server check passed ($($report.checked) configured)"
         return $true
     } finally {
-        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr, $tmpPy
     }
 }
 
