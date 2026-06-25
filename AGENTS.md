@@ -54,6 +54,7 @@ If multiple PRs target same integration category (providers/backends/notifiers),
 ## Tooling and architecture rules
 
 - Keep model-tool cross-references out of static schema descriptions when referenced tools may be absent; add dynamic hints in `get_tool_definitions()` logic.
+- For MCP-backed memory/tools, call on demand: when users ask about projects or personal information, call the configured memory MCP toolset first; do not run memory MCP calls on every generic turn.
 - For gateway running-session controls, ensure approval/control commands bypass both message guards where required.
 - Avoid wiring dead/unused code into live paths without end-to-end validation.
 

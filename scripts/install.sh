@@ -268,7 +268,7 @@ emit_manifest() {
     if [ "$INCLUDE_DESKTOP" = true ]; then
         desktop_stage='{"name":"desktop","title":"Build desktop app","category":"runtime","needs_user_input":false},'
     fi
-    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
+    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"mcp-check","title":"Check configured MCP servers","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
     printf '\n'
 }
 
@@ -2262,6 +2262,173 @@ SOUL_EOF
     apply_bootstrap_credentials
 }
 
+check_configured_mcp_servers() {
+    # Best-effort smoke check for configured MCP servers. Warns about
+    # unreachable/misconfigured entries without blocking install completion.
+    local config_path="$HERMES_HOME/config.yaml"
+    if [ ! -f "$config_path" ]; then
+        log_info "Skipping MCP server check: $config_path not found"
+        return 0
+    fi
+
+    local py=""
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        py="$INSTALL_DIR/venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        py="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        py="$(command -v python)"
+    fi
+    if [ -z "$py" ]; then
+        log_warn "Skipping MCP server check: no Python interpreter found"
+        return 0
+    fi
+
+    log_info "Checking configured MCP servers..."
+    local report rc
+    report="$("$py" - "$config_path" <<'PYEOF'
+import json
+import shutil
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print(json.dumps({"ok": True, "checked": 0, "failed": 0, "results": []}))
+    raise SystemExit(0)
+
+try:
+    import yaml
+except Exception as exc:
+    print(json.dumps({
+        "ok": True,
+        "checked": 0,
+        "failed": 0,
+        "results": [],
+        "note": f"Skipping MCP check: PyYAML unavailable ({exc})",
+    }))
+    raise SystemExit(0)
+
+try:
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+except Exception as exc:
+    print(json.dumps({
+        "ok": True,
+        "checked": 0,
+        "failed": 0,
+        "results": [],
+        "note": f"Skipping MCP check: cannot parse config.yaml ({exc})",
+    }))
+    raise SystemExit(0)
+
+servers = cfg.get("mcp_servers")
+if not isinstance(servers, dict) or not servers:
+    print(json.dumps({"ok": True, "checked": 0, "failed": 0, "results": []}))
+    raise SystemExit(0)
+
+results = []
+failed = 0
+for name, spec in servers.items():
+    if not isinstance(spec, dict):
+        results.append({"name": str(name), "ok": False, "reason": "invalid server config (not a mapping)"})
+        failed += 1
+        continue
+    cmd = str(spec.get("command") or "").strip()
+    url = str(spec.get("url") or "").strip()
+    connect_timeout = float(spec.get("connect_timeout") or 5)
+    connect_timeout = max(1.0, min(connect_timeout, 15.0))
+    checks = []
+    ok = True
+
+    if cmd:
+        resolved = shutil.which(cmd) if ("/" not in cmd and "\\" not in cmd) else (cmd if Path(cmd).exists() else None)
+        if resolved:
+            checks.append(f"command ok ({resolved})")
+        else:
+            checks.append(f"command missing ({cmd})")
+            ok = False
+
+    if url:
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
+                checks.append(f"url ok (HTTP {getattr(resp, 'status', 200)})")
+        except urllib.error.HTTPError as exc:
+            checks.append(f"url reachable (HTTP {exc.code})")
+        except Exception as exc:
+            checks.append(f"url unreachable ({exc})")
+            ok = False
+
+    if not cmd and not url:
+        checks.append("no command/url defined")
+        ok = False
+
+    if not ok:
+        failed += 1
+    results.append({"name": str(name), "ok": ok, "reason": "; ".join(checks)})
+
+print(json.dumps({"ok": failed == 0, "checked": len(results), "failed": failed, "results": results}))
+PYEOF
+)"
+    rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$report" ]; then
+        log_warn "MCP server check failed to run; skipping"
+        return 0
+    fi
+
+    local checked failed
+    checked="$("$py" - "$report" <<'PYEOF'
+import json, sys
+data = json.loads(sys.argv[1])
+print(data.get("checked", 0))
+PYEOF
+)"
+    failed="$("$py" - "$report" <<'PYEOF'
+import json, sys
+data = json.loads(sys.argv[1])
+print(data.get("failed", 0))
+PYEOF
+)"
+    local note
+    note="$("$py" - "$report" <<'PYEOF'
+import json, sys
+data = json.loads(sys.argv[1])
+print(data.get("note", ""))
+PYEOF
+)"
+    if [ -n "$note" ]; then
+        log_info "$note"
+    fi
+
+    if [ "$checked" = "0" ]; then
+        log_info "No MCP servers configured"
+        return 0
+    fi
+
+    "$py" - "$report" <<'PYEOF' | while IFS=':' read -r level name reason; do
+import json, sys
+data = json.loads(sys.argv[1])
+for row in data.get("results", []):
+    prefix = "ok" if row.get("ok") else "warn"
+    print(f"{prefix}:{row.get('name','?')}:{row.get('reason','')}")
+PYEOF
+        if [ "$level" = "ok" ]; then
+            log_success "  MCP '$name': $reason"
+        else
+            log_warn "  MCP '$name': $reason"
+        fi
+    done
+
+    if [ "$failed" != "0" ]; then
+        log_warn "MCP server check: $failed/$checked failed"
+    else
+        log_success "MCP server check passed ($checked configured)"
+    fi
+    return 0
+}
+
 find_system_browser() {
     # Prefer a user-specified browser path, then common Linux/macOS Chrome and
     # Chromium command names.  Arch-family distributions commonly ship plain
@@ -3991,6 +4158,12 @@ run_stage_body() {
             require_install_dir
             copy_config_templates
             ;;
+        mcp-check)
+            detect_os
+            resolve_install_layout
+            require_install_dir
+            check_configured_mcp_servers
+            ;;
         setup)
             detect_os
             resolve_install_layout
@@ -4089,6 +4262,7 @@ main() {
     install_node_deps
     setup_path
     copy_config_templates
+    check_configured_mcp_servers
     run_setup_wizard
     maybe_start_gateway
 

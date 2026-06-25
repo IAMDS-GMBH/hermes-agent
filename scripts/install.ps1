@@ -1784,6 +1784,170 @@ function Ensure-WindowsPython3Shim {
     }
 }
 
+function Test-ConfiguredMcpServers {
+    # Validate configured MCP servers from config.yaml after bootstrap writes them.
+    # This is a best-effort smoke check: warns on misconfiguration/reachability
+    # but never blocks install completion.
+    $configPath = "$HermesHome\config.yaml"
+    if (-not (Test-Path $configPath)) {
+        Write-Info "Skipping MCP server check: $configPath not found"
+        return $true
+    }
+
+    $pythonExe = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { "python" }
+    if (-not (Test-Path $pythonExe) -and $pythonExe -ne "python") {
+        Write-Warn "Skipping MCP server check: $pythonExe not found"
+        return $true
+    }
+
+    Write-Info "Checking configured MCP servers..."
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    try {
+        $pyScript = @'
+import json
+import shutil
+import socket
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print(json.dumps({"ok": True, "checked": 0, "failed": 0, "results": []}))
+    raise SystemExit(0)
+
+try:
+    import yaml
+except Exception as exc:
+    print(json.dumps({
+        "ok": True,
+        "checked": 0,
+        "failed": 0,
+        "results": [],
+        "note": f"Skipping MCP check: PyYAML unavailable ({exc})",
+    }))
+    raise SystemExit(0)
+
+try:
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+except Exception as exc:
+    print(json.dumps({
+        "ok": True,
+        "checked": 0,
+        "failed": 0,
+        "results": [],
+        "note": f"Skipping MCP check: cannot parse config.yaml ({exc})",
+    }))
+    raise SystemExit(0)
+
+servers = cfg.get("mcp_servers")
+if not isinstance(servers, dict) or not servers:
+    print(json.dumps({"ok": True, "checked": 0, "failed": 0, "results": []}))
+    raise SystemExit(0)
+
+results = []
+failed = 0
+
+for name, spec in servers.items():
+    if not isinstance(spec, dict):
+        results.append({"name": str(name), "ok": False, "reason": "invalid server config (not a mapping)"})
+        failed += 1
+        continue
+
+    cmd = str(spec.get("command") or "").strip()
+    url = str(spec.get("url") or "").strip()
+    connect_timeout = float(spec.get("connect_timeout") or 5)
+    connect_timeout = max(1.0, min(connect_timeout, 15.0))
+
+    checks = []
+    ok = True
+
+    if cmd:
+        resolved = shutil.which(cmd) if ("/" not in cmd and "\\" not in cmd) else (cmd if Path(cmd).exists() else None)
+        if resolved:
+            checks.append(f"command ok ({resolved})")
+        else:
+            checks.append(f"command missing ({cmd})")
+            ok = False
+
+    if url:
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
+                checks.append(f"url ok (HTTP {getattr(resp, 'status', 200)})")
+        except urllib.error.HTTPError as exc:
+            # 401/403/404 still prove endpoint is reachable.
+            checks.append(f"url reachable (HTTP {exc.code})")
+        except Exception as exc:
+            checks.append(f"url unreachable ({exc})")
+            ok = False
+
+    if not cmd and not url:
+        checks.append("no command/url defined")
+        ok = False
+
+    if not ok:
+        failed += 1
+    results.append({"name": str(name), "ok": ok, "reason": "; ".join(checks)})
+
+print(json.dumps({
+    "ok": failed == 0,
+    "checked": len(results),
+    "failed": failed,
+    "results": results,
+}))
+'@
+
+        & $pythonExe -c $pyScript $configPath 1> $tmpOut 2> $tmpErr
+        $exit = $LASTEXITCODE
+        $outText = Get-Content $tmpOut -Raw -ErrorAction SilentlyContinue
+        $errText = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
+        if ($exit -ne 0) {
+            if ($errText) {
+                Write-Warn "MCP check script failed: $errText"
+            } else {
+                Write-Warn "MCP check script failed (exit $exit)"
+            }
+            return $true
+        }
+
+        if (-not $outText) {
+            Write-Warn "MCP check produced no output"
+            return $true
+        }
+
+        $report = $outText | ConvertFrom-Json
+        if ($report.note) {
+            Write-Info $report.note
+        }
+
+        if ($report.checked -eq 0) {
+            Write-Info "No MCP servers configured"
+            return $true
+        }
+
+        foreach ($row in $report.results) {
+            if ($row.ok) {
+                Write-Success "  MCP '$($row.name)': $($row.reason)"
+            } else {
+                Write-Warn "  MCP '$($row.name)': $($row.reason)"
+            }
+        }
+
+        if ($report.failed -gt 0) {
+            Write-Warn "MCP server check: $($report.failed)/$($report.checked) failed"
+            return $false
+        }
+
+        Write-Success "MCP server check passed ($($report.checked) configured)"
+        return $true
+    } finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr
+    }
+}
+
 function Set-PathVariable {
     Write-Info "Setting up hermes command..."
     
@@ -3454,6 +3618,7 @@ if ($IncludeDesktop) {
 $InstallStages += @(
     @{ Name = "path";             Title = "Adding Hermes to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }
     @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates" }
+    @{ Name = "mcp-check";        Title = "Checking configured MCP servers";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-McpCheck" }
     @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks" }
     @{ Name = "bootstrap-marker"; Title = "Marking install complete";              Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-BootstrapMarker" }
     # Interactive stages.  In non-interactive mode these become no-ops; the
@@ -3495,6 +3660,11 @@ function Stage-NodeDeps         { Install-NodeDeps }
 function Stage-Desktop          { Install-Desktop }
 function Stage-Path             { Set-PathVariable }
 function Stage-ConfigTemplates  { Copy-ConfigTemplates }
+function Stage-McpCheck         {
+    if (-not (Test-ConfiguredMcpServers)) {
+        $script:_StageSkippedReason = "One or more configured MCP servers failed the connectivity check"
+    }
+}
 function Stage-PlatformSdks     { Resolve-UvCmd; Install-PlatformSdks }
 function Stage-BootstrapMarker  { Write-BootstrapMarker }
 function Stage-Configure        { Invoke-SetupWizard }
