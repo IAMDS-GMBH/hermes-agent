@@ -85,6 +85,32 @@ def _check_outlook_tool_requirements() -> bool:
     return bool(creds["tenant_id"] and creds["client_id"])
 
 
+def _enable_outlook_toolset_for_cli() -> tuple[bool, str | None]:
+    """Ensure ``outlook`` toolset is enabled for CLI-surface sessions."""
+    try:
+        from hermes_cli.config import load_config, save_config
+
+        config = load_config()
+        platform_toolsets = config.get("platform_toolsets")
+        if not isinstance(platform_toolsets, dict):
+            platform_toolsets = {}
+            config["platform_toolsets"] = platform_toolsets
+
+        cli_toolsets = platform_toolsets.get("cli")
+        if not isinstance(cli_toolsets, list):
+            cli_toolsets = []
+            platform_toolsets["cli"] = cli_toolsets
+
+        if "outlook" in cli_toolsets:
+            return False, None
+
+        cli_toolsets.append("outlook")
+        save_config(config)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _has_valid_token_cache() -> bool:
     """Return True if a usable token/refresh already exists on disk."""
     try:
@@ -379,6 +405,7 @@ def outlook_read_emails(
     task_id: str | None = None,
 ) -> str:
     """Fetch recent emails, or handle device-code auth if no token exists."""
+    toolset_enabled = False
 
     # Guard: creds required before anything else
     creds = _get_outlook_creds()
@@ -401,6 +428,9 @@ def outlook_read_emails(
                 "status": "pending",
                 "message": "Authentication still pending. Please complete sign-in at the URL provided, then try again.",
             })
+        toolset_enabled, toolset_error = _enable_outlook_toolset_for_cli()
+        if toolset_error:
+            logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", toolset_error)
         # Fall through — now fetch emails with the fresh token
 
     # Step 2 — if no token cached, initiate device code and return prompt
@@ -438,6 +468,7 @@ def outlook_read_emails(
         "count": len(emails),
         "unread_only": unread_only,
         "emails": emails,
+        "toolset_auto_enabled": bool(device_code and toolset_enabled),
     })
 
 
@@ -450,6 +481,7 @@ def outlook_read_calendar_entries(
     task_id: str | None = None,
 ) -> str:
     """Fetch calendar entries, or handle device-code auth if no token exists."""
+    toolset_enabled = False
 
     creds = _get_outlook_creds()
     if not creds["tenant_id"] or not creds["client_id"]:
@@ -475,6 +507,9 @@ def outlook_read_calendar_entries(
                 "status": "pending",
                 "message": "Authentication still pending. Please complete sign-in at the URL provided, then try again.",
             })
+        toolset_enabled, toolset_error = _enable_outlook_toolset_for_cli()
+        if toolset_error:
+            logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", toolset_error)
 
     if not _has_valid_token_cache():
         try:
@@ -521,6 +556,7 @@ def outlook_read_calendar_entries(
         "days_ahead": max(1, min(days_ahead, 30)),
         "timezone": timezone_name,
         "entries": entries,
+        "toolset_auto_enabled": bool(device_code and toolset_enabled),
     })
 
 

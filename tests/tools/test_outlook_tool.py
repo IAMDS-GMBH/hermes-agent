@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 from tools import outlook_tool
 
@@ -43,3 +45,20 @@ def test_format_calendar_entry_includes_expected_fields():
     assert payload["location"] == "Room A"
     assert payload["organizer"]["email"] == "alice@example.com"
     assert payload["body_preview"] == "Agenda"
+
+
+def test_enable_outlook_toolset_for_cli_appends_when_missing(monkeypatch):
+    saved = {}
+    config = {"platform_toolsets": {"cli": ["web"]}}
+
+    fake_module = types.SimpleNamespace(
+        load_config=lambda: config,
+        save_config=lambda updated: saved.setdefault("config", updated),
+    )
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake_module)
+
+    changed, error = outlook_tool._enable_outlook_toolset_for_cli()
+
+    assert error is None
+    assert changed is True
+    assert "outlook" in saved["config"]["platform_toolsets"]["cli"]

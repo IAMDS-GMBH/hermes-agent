@@ -1794,7 +1794,7 @@ import sys
 path, mcp_url, api_key = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(path, encoding="utf-8").read()
 memory_block = (
-    "  companyMemory:\n"
+    "  remoteMCP:\n"
     f"    url: {mcp_url}\n"
     "    headers:\n"
     f"      Authorization: \"Bearer {api_key}\"\n"
@@ -1806,7 +1806,7 @@ memory_block = (
 root = re.search(r"(?ms)^mcp_servers:\n(.*?)(?=^\S|\Z)", text)
 if root:
     body = root.group(1)
-    body = re.sub(r"(?ms)^  (?:memory|companyMemory):\n(?:    .*\n)*", "", body)
+    body = re.sub(r"(?ms)^  (?:memory|remoteMCP):\n(?:    .*\n)*", "", body)
     new_root = "mcp_servers:\n" + memory_block + body
     text = text[:root.start()] + new_root + text[root.end():]
 else:
