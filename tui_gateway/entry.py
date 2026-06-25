@@ -295,6 +295,16 @@ def main():
             try:
                 from tools.mcp_tool import discover_mcp_tools
                 discover_mcp_tools()
+                try:
+                    # Discovery may finish after the first session's agent was
+                    # built; refresh cached session tool snapshots so MCP tools
+                    # become available without requiring manual "Reload MCP".
+                    server._refresh_cached_agent_tools()
+                except Exception:
+                    logger.debug(
+                        "Failed to refresh cached sessions after MCP discovery",
+                        exc_info=True,
+                    )
             except Exception:
                 logger.warning(
                     "Background MCP tool discovery failed", exc_info=True

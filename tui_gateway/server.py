@@ -7226,6 +7226,51 @@ def _(rid, params: dict) -> dict:
 # ── Methods: tools & system ──────────────────────────────────────────
 
 
+def _refresh_cached_agent_tools(session_id: str | None = None) -> None:
+    """Refresh cached agent tool snapshots from current registry state.
+
+    Used by ``reload.mcp`` and startup background MCP discovery to make newly
+    discovered tools available to existing gateway sessions without requiring a
+    manual reload click.
+    """
+    try:
+        from model_tools import get_tool_definitions
+
+        new_defs = get_tool_definitions(
+            enabled_toolsets=_load_enabled_toolsets(),
+            quiet_mode=True,
+        )
+    except Exception as exc:
+        logger.warning("Failed to build refreshed tool definitions: %s", exc)
+        return
+
+    with _sessions_lock:
+        targets = []
+        if session_id:
+            session = _sessions.get(session_id)
+            if session:
+                targets.append((session_id, session))
+        else:
+            targets = list(_sessions.items())
+
+    for sid, session in targets:
+        agent = session.get("agent")
+        if not agent:
+            continue
+        try:
+            agent.tools = new_defs
+            agent.valid_tool_names = (
+                {t["function"]["name"] for t in new_defs} if new_defs else set()
+            )
+            _emit("session.info", sid, _session_info(agent, session))
+        except Exception as exc:
+            logger.warning(
+                "Failed to refresh cached agent tools for session %s: %s",
+                sid,
+                exc,
+            )
+
+
 @method("process.stop")
 def _(rid, params: dict) -> dict:
     try:
@@ -7282,35 +7327,12 @@ def _(rid, params: dict) -> dict:
 
         shutdown_mcp_servers()
         discover_mcp_tools()
+        # Rebuild the cached agent's tool snapshot so the current session picks
+        # up added/removed MCP tools without `/new` (which discards history).
+        # The user already consented to prompt-cache invalidation via the
+        # confirm gate above.
         if session:
-            agent = session["agent"]
-            # Rebuild the cached agent's tool snapshot so the current session
-            # picks up added/removed MCP tools without `/new` (which discards
-            # history).  The agent snapshots tools once at build and never
-            # re-reads the registry, so an explicit rebuild is required here.
-            # The user already consented to the prompt-cache invalidation via
-            # the confirm gate above.  Mirrors gateway/run.py::_execute_mcp_reload.
-            try:
-                from model_tools import get_tool_definitions
-
-                new_defs = get_tool_definitions(
-                    enabled_toolsets=_load_enabled_toolsets(),
-                    quiet_mode=True,
-                )
-                agent.tools = new_defs
-                agent.valid_tool_names = (
-                    {t["function"]["name"] for t in new_defs} if new_defs else set()
-                )
-            except Exception as _exc:
-                logger.warning(
-                    "Failed to refresh cached agent tools after /reload-mcp: %s",
-                    _exc,
-                )
-            _emit(
-                "session.info",
-                params.get("session_id", ""),
-                _session_info(agent, session),
-            )
+            _refresh_cached_agent_tools(params.get("session_id", ""))
 
         # Honor `always=true` by persisting the opt-out to config.
         if bool(params.get("always", False)):
