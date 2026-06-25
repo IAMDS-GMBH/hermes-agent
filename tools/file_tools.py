@@ -1457,24 +1457,27 @@ WRITE_FILE_SCHEMA = {
     }
 }
 
+_OLD_PATCH_DESCRIPTION = (
+    "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. "
+    "Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. "
+    "Returns a unified diff. Auto-runs syntax checks after editing.\n\n"
+    "REPLACE MODE (mode='replace', default): find a unique string and replace it. "
+    "REQUIRED PARAMETERS: mode, path, old_string, new_string.\n"
+    "PATCH MODE (mode='patch'): apply V4A multi-file patches for bulk changes. "
+    "REQUIRED PARAMETERS: mode, patch."
+)
+_OLD_PATCH_PARAM_DESCRIPTION = "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch"
+
 PATCH_SCHEMA = {
     "name": "patch",
-    "description": (
-        "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. "
-        "Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. "
-        "Returns a unified diff. Auto-runs syntax checks after editing.\n\n"
-        "REPLACE MODE (mode='replace', default): find a unique string and replace it. "
-        "REQUIRED PARAMETERS: mode, path, old_string, new_string.\n"
-        "PATCH MODE (mode='patch'): apply V4A multi-file patches for bulk changes. "
-        "REQUIRED PARAMETERS: mode, patch."
-    ),
+    "description": "Edit files using string replace mode or V4A patch mode. Returns unified diff and runs syntax checks.",
     "parameters": {
         "type": "object",
         "properties": {
             "mode": {
                 "type": "string",
                 "enum": ["replace", "patch"],
-                "description": "Edit mode. 'replace' (default): requires path + old_string + new_string. 'patch': requires patch content only.",
+                "description": "replace (path+old_string+new_string) or patch (patch content).",
                 "default": "replace",
             },
             "path": {
@@ -1483,11 +1486,11 @@ PATCH_SCHEMA = {
             },
             "old_string": {
                 "type": "string",
-                "description": "REQUIRED when mode='replace'. Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
+                "description": "Required in replace mode: text to find.",
             },
             "new_string": {
                 "type": "string",
-                "description": "REQUIRED when mode='replace'. Replacement text. Pass empty string '' to delete the matched text.",
+                "description": "Required in replace mode: replacement text (empty string allowed).",
             },
             "replace_all": {
                 "type": "boolean",
@@ -1496,7 +1499,7 @@ PATCH_SCHEMA = {
             },
             "patch": {
                 "type": "string",
-                "description": "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch",
+                "description": "Required in patch mode: V4A patch content.",
             },
             "cross_profile": {
                 "type": "boolean",
@@ -1508,20 +1511,22 @@ PATCH_SCHEMA = {
     },
 }
 
+_OLD_SEARCH_FILES_DESCRIPTION = "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents.\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls — results sorted by modification time."
+
 SEARCH_FILES_SCHEMA = {
     "name": "search_files",
-    "description": "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents.\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls — results sorted by modification time.",
+    "description": "Search file content (regex) or file names (glob).",
     "parameters": {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"},
-            "target": {"type": "string", "enum": ["content", "files"], "description": "'content' searches inside file contents, 'files' searches for files by name", "default": "content"},
-            "path": {"type": "string", "description": "Directory or file to search in (default: current working directory)", "default": "."},
-            "file_glob": {"type": "string", "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)"},
-            "limit": {"type": "integer", "description": "Maximum number of results to return (default: 50)", "default": 50},
-            "offset": {"type": "integer", "description": "Skip first N results for pagination (default: 0)", "default": 0},
-            "output_mode": {"type": "string", "enum": ["content", "files_only", "count"], "description": "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file", "default": "content"},
-            "context": {"type": "integer", "description": "Number of context lines before and after each match (grep mode only)", "default": 0}
+            "pattern": {"type": "string", "description": "Regex for content search or glob for file search."},
+            "target": {"type": "string", "enum": ["content", "files"], "description": "content or files.", "default": "content"},
+            "path": {"type": "string", "description": "Directory or file path to search.", "default": "."},
+            "file_glob": {"type": "string", "description": "Optional file filter for content search."},
+            "limit": {"type": "integer", "description": "Max results.", "default": 50},
+            "offset": {"type": "integer", "description": "Pagination offset.", "default": 0},
+            "output_mode": {"type": "string", "enum": ["content", "files_only", "count"], "description": "content, files_only, or count.", "default": "content"},
+            "context": {"type": "integer", "description": "Context lines (content mode).", "default": 0}
         },
         "required": ["pattern"]
     }

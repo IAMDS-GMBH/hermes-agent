@@ -737,51 +737,53 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
 # OpenAI Function-Calling Schema
 # =============================================================================
 
+_OLD_MEMORY_DESCRIPTION = (
+    "Save durable information to persistent memory that survives across sessions. "
+    "Memory is injected into future turns, so keep it compact and focused on facts "
+    "that will still matter later.\n\n"
+    "WHEN TO SAVE (do this proactively, don't wait to be asked):\n"
+    "- User corrects you or says 'remember this' / 'don't do that again'\n"
+    "- User shares a preference, habit, or personal detail (name, role, timezone, coding style)\n"
+    "- You discover something about the environment (OS, installed tools, project structure)\n"
+    "- You learn a convention, API quirk, or workflow specific to this user's setup\n"
+    "- You identify a stable fact that will be useful again in future sessions\n\n"
+    "PRIORITY: User preferences and corrections > environment facts > procedural knowledge. "
+    "The most valuable memory prevents the user from having to repeat themselves.\n\n"
+    "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO "
+    "state to memory; use session_search to recall those from past transcripts.\n"
+    "If you've discovered a new way to do something, solved a problem that could be "
+    "necessary later, save it as a skill with the skill tool.\n\n"
+    "TWO TARGETS:\n"
+    "- 'user': who the user is -- name, role, preferences, communication style, pet peeves\n"
+    "- 'memory': your notes -- environment facts, project conventions, tool quirks, lessons learned\n\n"
+    "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
+    "remove (delete -- old_text identifies it).\n\n"
+    "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
+)
+
 MEMORY_SCHEMA = {
     "name": "memory",
-    "description": (
-        "Save durable information to persistent memory that survives across sessions. "
-        "Memory is injected into future turns, so keep it compact and focused on facts "
-        "that will still matter later.\n\n"
-        "WHEN TO SAVE (do this proactively, don't wait to be asked):\n"
-        "- User corrects you or says 'remember this' / 'don't do that again'\n"
-        "- User shares a preference, habit, or personal detail (name, role, timezone, coding style)\n"
-        "- You discover something about the environment (OS, installed tools, project structure)\n"
-        "- You learn a convention, API quirk, or workflow specific to this user's setup\n"
-        "- You identify a stable fact that will be useful again in future sessions\n\n"
-        "PRIORITY: User preferences and corrections > environment facts > procedural knowledge. "
-        "The most valuable memory prevents the user from having to repeat themselves.\n\n"
-        "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO "
-        "state to memory; use session_search to recall those from past transcripts.\n"
-        "If you've discovered a new way to do something, solved a problem that could be "
-        "necessary later, save it as a skill with the skill tool.\n\n"
-        "TWO TARGETS:\n"
-        "- 'user': who the user is -- name, role, preferences, communication style, pet peeves\n"
-        "- 'memory': your notes -- environment facts, project conventions, tool quirks, lessons learned\n\n"
-        "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
-        "remove (delete -- old_text identifies it).\n\n"
-        "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
-    ),
+    "description": "Store durable memory entries across sessions. Use target=user for profile facts and target=memory for working notes.",
     "parameters": {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["add", "replace", "remove"],
-                "description": "The action to perform."
+                "description": "add, replace, or remove."
             },
             "target": {
                 "type": "string",
                 "enum": ["memory", "user"],
-                "description": "Which memory store: 'memory' for personal notes, 'user' for user profile."
+                "description": "memory notes or user profile."
             },
             "content": {
                 "type": "string",
-                "description": "The entry content. Required for 'add' and 'replace'."
+                "description": "Entry content for add/replace."
             },
             "old_text": {
                 "type": "string",
-                "description": "Short unique substring identifying the entry to replace or remove."
+                "description": "Unique substring to identify entry for replace/remove."
             },
         },
         "required": ["action", "target"],
@@ -805,7 +807,6 @@ registry.register(
     check_fn=check_memory_requirements,
     emoji="🧠",
 )
-
 
 
 

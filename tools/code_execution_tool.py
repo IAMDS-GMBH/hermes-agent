@@ -1745,15 +1745,6 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
         doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools
     )
 
-    # Build example import list from enabled tools
-    import_examples = [n for n in ("web_search", "terminal") if n in enabled_sandbox_tools]
-    if not import_examples:
-        import_examples = sorted(enabled_sandbox_tools)[:2]
-    if import_examples:
-        import_str = ", ".join(import_examples) + ", ..."
-    else:
-        import_str = "..."
-
     # Mode-specific CWD guidance. Project mode is the default and matches
     # terminal()'s filesystem/interpreter; strict mode retains the isolated
     # temp-dir staging and hermes-agent's own python.
@@ -1768,7 +1759,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
             "so project deps (pandas, etc.) and relative paths work like in terminal()."
         )
 
-    description = (
+    legacy_description = (
         "Run a Python script that can call Hermes tools programmatically. "
         "Use this when you need 3+ tool calls with processing logic between them, "
         "need to filter/reduce large tool outputs before they enter your context, "
@@ -1789,19 +1780,24 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
         "  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n"
         "  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures"
     )
+    # Keep old verbose schema text for maintainers while serving a compact
+    # runtime schema to reduce prompt token footprint.
+    _ = legacy_description
 
     return {
         "name": "execute_code",
-        "description": description,
+        "description": (
+            "Run Python code that can call Hermes tools via hermes_tools. "
+            "Best for multi-step loops, branching, retries, and output reduction."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "code": {
                     "type": "string",
                     "description": (
-                        "Python code to execute. Import tools with "
-                        f"`from hermes_tools import {import_str}` "
-                        "and print your final result to stdout."
+                        "Python code to execute. Import tools from hermes_tools "
+                        "and print final result to stdout."
                     ),
                 },
             },
