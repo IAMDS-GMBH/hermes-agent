@@ -527,6 +527,7 @@ def _outlook_setup() -> None:
     print("  You will need an Azure AD app registration with:")
     print("    • Mail.Read  (Application permission)")
     print("    • Mail.Send  (Application permission)")
+    print("    • Calendars.Read (Delegated permission, if using outlook_read_calendar_entries tool)")
     print("  Docs: https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps")
     print()
 

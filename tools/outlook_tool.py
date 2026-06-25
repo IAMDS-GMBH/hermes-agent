@@ -27,11 +27,14 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from tools.registry import registry
 
 logger = logging.getLogger(__name__)
+
+OUTLOOK_CALENDAR_READ_SCOPE = "Calendars.Read offline_access"
 
 # ---------------------------------------------------------------------------
 # Credential helpers (mirrors adapter.py logic, no coupling)
@@ -104,24 +107,25 @@ def _has_valid_token_cache() -> bool:
 # Async: initiate device code (no polling — returns prompt immediately)
 # ---------------------------------------------------------------------------
 
-async def _start_device_code_async() -> dict[str, Any]:
+async def _start_device_code_async(scope: str | None = None) -> dict[str, Any]:
     """Request a device code from Microsoft and return the auth prompt info."""
     import httpx
     from tools.microsoft_graph_auth import (
         GraphDelegatedCredentials,
-        DEFAULT_GRAPH_AUTHORITY_URL,
         DEFAULT_DELEGATED_SCOPE,
     )
+    delegated_scope = (scope or DEFAULT_DELEGATED_SCOPE).strip() or DEFAULT_DELEGATED_SCOPE
     creds_raw = _get_outlook_creds()
     creds = GraphDelegatedCredentials(
         tenant_id=creds_raw["tenant_id"],
         client_id=creds_raw["client_id"],
         client_secret=creds_raw["client_secret"] or None,
+        scope=delegated_scope,
     )
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
         resp = await client.post(
             creds.device_code_url,
-            data={"client_id": creds.client_id, "scope": DEFAULT_DELEGATED_SCOPE},
+            data={"client_id": creds.client_id, "scope": delegated_scope},
         )
         if resp.status_code >= 400:
             raise RuntimeError(f"Device code request failed: {resp.text}")
@@ -141,20 +145,22 @@ async def _start_device_code_async() -> dict[str, Any]:
 # Async: poll for token after user has authenticated
 # ---------------------------------------------------------------------------
 
-async def _poll_device_code_async(device_code: str) -> bool:
+async def _poll_device_code_async(device_code: str, scope: str | None = None) -> bool:
     """Poll once for a token. Saves cache on success. Returns True if authed."""
     import httpx
     from tools.microsoft_graph_auth import (
         GraphDelegatedCredentials,
-        MicrosoftGraphAuthError,
+        DEFAULT_DELEGATED_SCOPE,
     )
     from hermes_constants import get_hermes_home
 
+    delegated_scope = (scope or DEFAULT_DELEGATED_SCOPE).strip() or DEFAULT_DELEGATED_SCOPE
     creds_raw = _get_outlook_creds()
     creds = GraphDelegatedCredentials(
         tenant_id=creds_raw["tenant_id"],
         client_id=creds_raw["client_id"],
         client_secret=creds_raw["client_secret"] or None,
+        scope=delegated_scope,
     )
     token_data: dict[str, str] = {
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
@@ -264,6 +270,89 @@ def _format_email(msg: dict[str, Any], include_body: bool) -> dict[str, Any]:
     }
 
 
+async def _fetch_calendar_entries_async(
+    count: int,
+    days_ahead: int,
+    include_body_preview: bool,
+    timezone_name: str,
+) -> list[dict[str, Any]]:
+    from tools.microsoft_graph_auth import (
+        GraphDelegatedCredentials,
+        GraphDeviceCodeProvider,
+    )
+    from tools.microsoft_graph_client import MicrosoftGraphClient
+
+    creds_raw = _get_outlook_creds()
+    creds = GraphDelegatedCredentials(
+        tenant_id=creds_raw["tenant_id"],
+        client_id=creds_raw["client_id"],
+        client_secret=creds_raw["client_secret"] or None,
+        scope=OUTLOOK_CALENDAR_READ_SCOPE,
+    )
+    provider = GraphDeviceCodeProvider(creds)
+    client = MicrosoftGraphClient(provider, user_agent="Hermes-Outlook/1.0")
+
+    now = datetime.now(timezone.utc)
+    start_iso = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    end_iso = (now + timedelta(days=max(1, min(days_ahead, 30)))).replace(
+        microsecond=0
+    ).isoformat().replace("+00:00", "Z")
+
+    select_fields = [
+        "id",
+        "subject",
+        "start",
+        "end",
+        "isAllDay",
+        "location",
+        "organizer",
+        "attendees",
+        "webLink",
+    ]
+    if include_body_preview:
+        select_fields.append("bodyPreview")
+
+    params: dict[str, Any] = {
+        "startDateTime": start_iso,
+        "endDateTime": end_iso,
+        "$top": min(max(1, count), 50),
+        "$orderby": "start/dateTime",
+        "$select": ",".join(select_fields),
+    }
+    headers = {"Prefer": f'outlook.timezone="{timezone_name}"'}
+    resp = await client.get_json("/me/calendarView", params=params, headers=headers)
+    return resp.get("value", [])
+
+
+def _format_calendar_entry(entry: dict[str, Any], include_body_preview: bool) -> dict[str, Any]:
+    organizer = ((entry.get("organizer") or {}).get("emailAddress") or {})
+    location = entry.get("location") or {}
+    start = entry.get("start") or {}
+    end = entry.get("end") or {}
+    result = {
+        "id": entry.get("id", ""),
+        "subject": entry.get("subject") or "(no subject)",
+        "start": {
+            "date_time": start.get("dateTime", ""),
+            "time_zone": start.get("timeZone", ""),
+        },
+        "end": {
+            "date_time": end.get("dateTime", ""),
+            "time_zone": end.get("timeZone", ""),
+        },
+        "is_all_day": bool(entry.get("isAllDay", False)),
+        "location": location.get("displayName", ""),
+        "organizer": {
+            "name": organizer.get("name", ""),
+            "email": organizer.get("address", ""),
+        },
+        "web_link": entry.get("webLink", ""),
+    }
+    if include_body_preview:
+        result["body_preview"] = entry.get("bodyPreview", "")
+    return result
+
+
 def _run_async(coro: Any, timeout: float = 120) -> Any:
     """Run a coroutine safely regardless of whether a loop is already running."""
     try:
@@ -352,6 +441,89 @@ def outlook_read_emails(
     })
 
 
+def outlook_read_calendar_entries(
+    count: int = 10,
+    days_ahead: int = 7,
+    include_body_preview: bool = False,
+    timezone_name: str = "UTC",
+    device_code: str = "",
+    task_id: str | None = None,
+) -> str:
+    """Fetch calendar entries, or handle device-code auth if no token exists."""
+
+    creds = _get_outlook_creds()
+    if not creds["tenant_id"] or not creds["client_id"]:
+        return json.dumps({
+            "error": (
+                "Outlook credentials not configured. "
+                "Go to Messaging → Outlook setup and enter your Azure AD Tenant ID and Client ID."
+            )
+        })
+
+    if device_code:
+        try:
+            authed = _run_async(
+                _poll_device_code_async(
+                    device_code, OUTLOOK_CALENDAR_READ_SCOPE
+                ),
+                timeout=30,
+            )
+        except Exception as exc:
+            return json.dumps({"error": f"Token poll failed: {exc}"})
+        if not authed:
+            return json.dumps({
+                "status": "pending",
+                "message": "Authentication still pending. Please complete sign-in at the URL provided, then try again.",
+            })
+
+    if not _has_valid_token_cache():
+        try:
+            info = _run_async(
+                _start_device_code_async(OUTLOOK_CALENDAR_READ_SCOPE),
+                timeout=30,
+            )
+        except Exception as exc:
+            return json.dumps({"error": f"Could not start device code flow: {exc}"})
+        return json.dumps({
+            "status": "auth_required",
+            "message": (
+                "Outlook calendar authentication required. "
+                f"Open {info['verification_uri']} and enter the code: {info['user_code']}. "
+                f"The code expires in {info['expires_in_seconds'] // 60} minutes. "
+                "Once you have signed in, call this tool again with the device_code parameter "
+                f"set to: {info['device_code']}"
+            ),
+            "required_scopes": OUTLOOK_CALENDAR_READ_SCOPE,
+            "verification_uri": info["verification_uri"],
+            "user_code": info["user_code"],
+            "device_code": info["device_code"],
+            "expires_in_seconds": info["expires_in_seconds"],
+        })
+
+    try:
+        raw_entries = _run_async(
+            _fetch_calendar_entries_async(
+                count=count,
+                days_ahead=days_ahead,
+                include_body_preview=include_body_preview,
+                timezone_name=timezone_name,
+            ),
+            timeout=120,
+        )
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+
+    entries = [
+        _format_calendar_entry(entry, include_body_preview) for entry in raw_entries
+    ]
+    return json.dumps({
+        "count": len(entries),
+        "days_ahead": max(1, min(days_ahead, 30)),
+        "timezone": timezone_name,
+        "entries": entries,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -408,6 +580,64 @@ registry.register(
         folder=str(args.get("folder", "inbox")),
         unread_only=bool(args.get("unread_only", False)),
         include_body=bool(args.get("include_body", True)),
+        device_code=str(args.get("device_code", "")),
+        task_id=kw.get("task_id"),
+    ),
+)
+
+registry.register(
+    name="outlook_read_calendar_entries",
+    toolset="outlook",
+    schema={
+        "name": "outlook_read_calendar_entries",
+        "description": (
+            "Read Microsoft Outlook / Microsoft 365 calendar entries (read-only). "
+            "Returns upcoming events for the next N days with start/end time, organizer, and location."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "description": "Number of calendar entries to fetch (1-50). Default 10.",
+                    "default": 10,
+                },
+                "days_ahead": {
+                    "type": "integer",
+                    "description": "How many days ahead to read (1-30). Default 7.",
+                    "default": 7,
+                },
+                "include_body_preview": {
+                    "type": "boolean",
+                    "description": "Include event body preview in results.",
+                    "default": False,
+                },
+                "timezone_name": {
+                    "type": "string",
+                    "description": (
+                        "Outlook timezone to render times in (IANA/Windows name accepted by Graph). "
+                        "Default UTC."
+                    ),
+                    "default": "UTC",
+                },
+                "device_code": {
+                    "type": "string",
+                    "description": (
+                        "Only set this after an auth_required response. "
+                        "Pass back the device_code value from that response "
+                        "after the user has completed sign-in at the verification URL."
+                    ),
+                    "default": "",
+                },
+            },
+            "required": [],
+        },
+    },
+    handler=lambda args, **kw: outlook_read_calendar_entries(
+        count=int(args.get("count", 10)),
+        days_ahead=int(args.get("days_ahead", 7)),
+        include_body_preview=bool(args.get("include_body_preview", False)),
+        timezone_name=str(args.get("timezone_name", "UTC")),
         device_code=str(args.get("device_code", "")),
         task_id=kw.get("task_id"),
     ),
