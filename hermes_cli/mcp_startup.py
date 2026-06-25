@@ -65,14 +65,20 @@ def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
         except ValueError:
             pass
     else:
-        # Memory MCP endpoints are often remote and need a longer first wait
+        # Remote MCP endpoints are often slower and need a longer first wait
         # to be present in the initial tool snapshot.
         try:
             from hermes_cli.config import read_raw_config
 
             mcp_servers = (read_raw_config() or {}).get("mcp_servers")
-            if isinstance(mcp_servers, dict) and isinstance(mcp_servers.get("memory"), dict):
-                timeout = 6.0
+            if isinstance(mcp_servers, dict):
+                for spec in mcp_servers.values():
+                    if not isinstance(spec, dict):
+                        continue
+                    transport = str(spec.get("transport") or "").strip().lower()
+                    if spec.get("url") or transport in {"http", "https", "sse", "streamable_http"}:
+                        timeout = 6.0
+                        break
         except Exception:
             pass
 

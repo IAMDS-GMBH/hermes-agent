@@ -1878,8 +1878,13 @@ for name, spec in servers.items():
             with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
                 checks.append("url ok (HTTP {})".format(getattr(resp, 'status', 200)))
         except urllib.error.HTTPError as exc:
-            # 401/403/404 still prove endpoint is reachable.
-            checks.append("url reachable (HTTP {})".format(exc.code))
+            # 4xx usually means auth/path gating but server is alive; 5xx means
+            # upstream/service failure and should fail the smoke check.
+            if int(exc.code) >= 500:
+                checks.append("url server error (HTTP {})".format(exc.code))
+                ok = False
+            else:
+                checks.append("url reachable (HTTP {})".format(exc.code))
         except Exception as exc:
             checks.append("url unreachable ({})".format(exc))
             ok = False

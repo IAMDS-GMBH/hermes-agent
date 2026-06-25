@@ -2307,7 +2307,7 @@ except Exception as exc:
         "checked": 0,
         "failed": 0,
         "results": [],
-        "note": f"Skipping MCP check: PyYAML unavailable ({exc})",
+        "note": "Skipping MCP check: PyYAML unavailable ({})".format(exc),
     }))
     raise SystemExit(0)
 
@@ -2319,7 +2319,7 @@ except Exception as exc:
         "checked": 0,
         "failed": 0,
         "results": [],
-        "note": f"Skipping MCP check: cannot parse config.yaml ({exc})",
+        "note": "Skipping MCP check: cannot parse config.yaml ({})".format(exc),
     }))
     raise SystemExit(0)
 
@@ -2345,20 +2345,26 @@ for name, spec in servers.items():
     if cmd:
         resolved = shutil.which(cmd) if ("/" not in cmd and "\\" not in cmd) else (cmd if Path(cmd).exists() else None)
         if resolved:
-            checks.append(f"command ok ({resolved})")
+            checks.append("command ok ({})".format(resolved))
         else:
-            checks.append(f"command missing ({cmd})")
+            checks.append("command missing ({})".format(cmd))
             ok = False
 
     if url:
         req = urllib.request.Request(url, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
-                checks.append(f"url ok (HTTP {getattr(resp, 'status', 200)})")
+                checks.append("url ok (HTTP {})".format(getattr(resp, 'status', 200)))
         except urllib.error.HTTPError as exc:
-            checks.append(f"url reachable (HTTP {exc.code})")
+            # 4xx usually means auth/path gating but server is alive; 5xx means
+            # upstream/service failure and should fail the smoke check.
+            if int(exc.code) >= 500:
+                checks.append("url server error (HTTP {})".format(exc.code))
+                ok = False
+            else:
+                checks.append("url reachable (HTTP {})".format(exc.code))
         except Exception as exc:
-            checks.append(f"url unreachable ({exc})")
+            checks.append("url unreachable ({})".format(exc))
             ok = False
 
     if not cmd and not url:

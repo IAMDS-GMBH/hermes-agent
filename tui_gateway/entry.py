@@ -210,9 +210,14 @@ def _mcp_discovery_wait_timeout(default_timeout: float) -> float:
         from hermes_cli.config import read_raw_config
 
         mcp_servers = (read_raw_config() or {}).get("mcp_servers")
-        if isinstance(mcp_servers, dict) and isinstance(mcp_servers.get("memory"), dict):
-            # Remote memory MCPs are commonly slower than local stdio tools.
-            return 6.0
+        if isinstance(mcp_servers, dict):
+            for spec in mcp_servers.values():
+                if not isinstance(spec, dict):
+                    continue
+                transport = str(spec.get("transport") or "").strip().lower()
+                if spec.get("url") or transport in {"http", "https", "sse", "streamable_http"}:
+                    # Remote MCP servers are commonly slower than local stdio tools.
+                    return 6.0
     except Exception:
         pass
 
