@@ -2165,10 +2165,6 @@ function Apply-BootstrapCredentials {
     # Called during config setup when installer was launched with credentials.
     $bootstrapApiKey = $env:HERMES_BOOTSTRAP_API_KEY
     $bootstrapModel = $env:HERMES_BOOTSTRAP_MODEL
-    $bootstrapEmail = $env:HERMES_BOOTSTRAP_EMAIL
-    $bootstrapEmailPassword = $env:HERMES_BOOTSTRAP_EMAIL_PASSWORD
-    $bootstrapImapServer = $env:HERMES_BOOTSTRAP_IMAP_SERVER
-    $bootstrapSmtpServer = $env:HERMES_BOOTSTRAP_SMTP_SERVER
 
     # If no API key provided, skip - use interactive mode or defaults
     if ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
@@ -2248,26 +2244,10 @@ function Apply-BootstrapCredentials {
 OPENAI_API_KEY=$bootstrapApiKey
 "@
         
-        # Add email secrets if provided
-        if (-not [string]::IsNullOrWhiteSpace($bootstrapEmail)) {
-            $envContent += "`n# Email gateway configuration`n"
-            $envContent += ('EMAIL_ADDRESS={0}' -f $bootstrapEmail) + [Environment]::NewLine
-            
-            if (-not [string]::IsNullOrWhiteSpace($bootstrapEmailPassword)) {
-                $envContent += ('EMAIL_PASSWORD={0}' -f $bootstrapEmailPassword) + [Environment]::NewLine
-            }
-            if (-not [string]::IsNullOrWhiteSpace($bootstrapImapServer)) {
-                $envContent += ('IMAP_SERVER={0}' -f $bootstrapImapServer) + [Environment]::NewLine
-            }
-            if (-not [string]::IsNullOrWhiteSpace($bootstrapSmtpServer)) {
-                $envContent += ('SMTP_SERVER={0}' -f $bootstrapSmtpServer) + [Environment]::NewLine
-            }
-        }
-        
         # Append without UTF-8 BOM (Add-Content -Encoding UTF8 adds BOM in PS5.1)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::AppendAllText($envPath, $envContent, $utf8NoBom)
-        Write-Success "Configured $envPath with API key and email secrets"
+        Write-Success "Configured $envPath with API key"
     }
 
     # Patch hermes-agent: pin openai-api to fetched model list, suppress copilot

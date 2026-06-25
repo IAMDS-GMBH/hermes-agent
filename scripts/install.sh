@@ -1993,24 +1993,9 @@ PYEOF
         {
             echo "# Added by bootstrap installer"
             echo "OPENAI_API_KEY=${HERMES_BOOTSTRAP_API_KEY}"
-            
-            # Add email secrets if provided
-            if [ -n "${HERMES_BOOTSTRAP_EMAIL:-}" ]; then
-                echo "# Email gateway configuration"
-                echo "EMAIL_ADDRESS=${HERMES_BOOTSTRAP_EMAIL}"
-                if [ -n "${HERMES_BOOTSTRAP_EMAIL_PASSWORD:-}" ]; then
-                    echo "EMAIL_PASSWORD=${HERMES_BOOTSTRAP_EMAIL_PASSWORD}"
-                fi
-                if [ -n "${HERMES_BOOTSTRAP_IMAP_SERVER:-}" ]; then
-                    echo "IMAP_SERVER=${HERMES_BOOTSTRAP_IMAP_SERVER}"
-                fi
-                if [ -n "${HERMES_BOOTSTRAP_SMTP_SERVER:-}" ]; then
-                    echo "SMTP_SERVER=${HERMES_BOOTSTRAP_SMTP_SERVER}"
-                fi
-            fi
         } >> "$HERMES_HOME/.env"
-        
-        log_success "Configured .env with API key and email secrets"
+
+        log_success "Configured .env with API key"
     fi
 }
 
