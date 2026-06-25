@@ -1395,6 +1395,59 @@ class TestLiteLLMSkillHubSource:
         assert bundle.source == "litellm-skill-hub"
         assert bundle.identifier == "litellm-skill-hub/grill-me"
 
+    def test_search_accepts_plugins_key_payload(self):
+        payload = {
+            "plugins": [
+                {
+                    "name": "grill-me",
+                    "description": "Interview skill",
+                    "domain": "Productivity",
+                    "namespace": "interviews",
+                    "source": {"source": "github", "repo": "mattpocock/skills"},
+                }
+            ],
+            "count": 1,
+        }
+
+        with patch("tools.skills_hub.fetch_litellm_hub_json", return_value=(payload, None)):
+            results = self._source().search("grill", limit=10)
+
+        assert len(results) == 1
+        assert results[0].identifier == "litellm-skill-hub/grill-me"
+
+    def test_fetch_github_repo_only_tries_inferred_paths(self):
+        payload = {
+            "plugins": [
+                {
+                    "name": "grill-me",
+                    "description": "Interview skill",
+                    "domain": "Productivity",
+                    "namespace": "interviews",
+                    "source": {"source": "github", "repo": "mattpocock/skills"},
+                }
+            ],
+        }
+        upstream_bundle = SkillBundle(
+            name="grill-me",
+            files={"SKILL.md": "# grill"},
+            source="github",
+            identifier="mattpocock/skills/skills/productivity/grill-me",
+            trust_level="community",
+        )
+        src = self._source()
+
+        with patch("tools.skills_hub.fetch_litellm_hub_json", return_value=(payload, None)), \
+             patch.object(src._github, "_find_skill_in_repo_tree", return_value=None), \
+             patch.object(src._github, "fetch", side_effect=[None, None, None, upstream_bundle]) as mock_fetch:
+            bundle = src.fetch("litellm-skill-hub/grill-me")
+
+        assert bundle is not None
+        attempted = [call.args[0] for call in mock_fetch.call_args_list]
+        assert "mattpocock/skills/skills/grill-me" in attempted
+        assert "mattpocock/skills/grill-me" in attempted
+        assert "mattpocock/skills/skills/interviews/grill-me" in attempted
+        assert "mattpocock/skills/skills/productivity/grill-me" in attempted
+
 
 # ---------------------------------------------------------------------------
 # HubLockFile

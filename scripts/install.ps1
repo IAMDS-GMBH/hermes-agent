@@ -1552,6 +1552,7 @@ function Install-Dependencies {
     $pythonExeForParse = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { (& $UvCmd python find $PythonVersion) }
     $allExtras = @()
     if (Test-Path $pythonExeForParse) {
+        $tmpParsePy = [System.IO.Path]::GetTempFileName()
         $parseScript = @"
 import re, sys, tomllib
 try:
@@ -1566,7 +1567,9 @@ try:
 except Exception:
     sys.exit(1)
 "@
-        $parsed = & $pythonExeForParse -c $parseScript 2>$null
+        Set-Content -Path $tmpParsePy -Value $parseScript -Encoding UTF8
+        $parsed = & $pythonExeForParse $tmpParsePy 2>$null
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmpParsePy
         if ($LASTEXITCODE -eq 0 -and $parsed) {
             $allExtras = $parsed.Trim().Split(',')
         }
@@ -2005,6 +2008,7 @@ function Invoke-McpReload {
     Write-Info "Reloading MCP servers..."
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
+    $tmpPy = [System.IO.Path]::GetTempFileName()
     try {
         $pyScript = @'
 import json
@@ -2041,10 +2045,11 @@ print(json.dumps({"ok": True, "reloaded": True, "count": len(servers)}))
 
         Push-Location $InstallDir
         try {
-            & $pythonExe -c $pyScript $configPath 1> $tmpOut 2> $tmpErr
-        } finally {
-            Pop-Location
-        }
+    Set-Content -Path $tmpPy -Value $pyScript -Encoding UTF8
+    & $pythonExe $tmpPy $configPath 1> $tmpOut 2> $tmpErr
+} finally {
+    Pop-Location
+}
         $exit = $LASTEXITCODE
         $outText = Get-Content $tmpOut -Raw -ErrorAction SilentlyContinue
         $errText = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
@@ -2072,7 +2077,7 @@ print(json.dumps({"ok": True, "reloaded": True, "count": len(servers)}))
         }
         return $true
     } finally {
-        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr, $tmpPy
     }
 }
 

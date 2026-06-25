@@ -1449,14 +1449,54 @@ class LiteLLMSkillHubSource(SkillSource):
         source_type = str(source.get("source", "")).strip().lower()
         url = str(source.get("url", "")).strip()
         path = str(source.get("path", "")).strip().strip("/")
+        repo = str(source.get("repo", "")).strip().strip("/")
 
         bundle: Optional[SkillBundle] = None
         if source_type in {"git-subdir", "github"}:
-            repo, repo_path = self._parse_github_source(url, path)
-            if not repo or not repo_path:
-                return None
-            gh_identifier = f"{repo}/{repo_path}"
-            bundle = self._github.fetch(gh_identifier)
+            candidate_identifiers: List[str] = []
+
+            parsed_repo, parsed_path = self._parse_github_source(url, path)
+            if parsed_repo and parsed_path:
+                candidate_identifiers.append(f"{parsed_repo}/{parsed_path}")
+
+            if repo and path:
+                candidate_identifiers.append(f"{repo}/{path}")
+
+            skill_name = str(entry.get("name", "")).strip()
+            if repo and skill_name:
+                namespace = str(entry.get("namespace", "")).strip().strip("/")
+                domain = str(entry.get("domain", "")).strip().lower()
+                domain_slug = re.sub(r"[^a-z0-9_-]+", "-", domain).strip("-")
+
+                candidate_paths = [
+                    f"skills/{skill_name}",
+                    skill_name,
+                ]
+                if namespace:
+                    candidate_paths.append(f"skills/{namespace}/{skill_name}")
+                if domain_slug:
+                    candidate_paths.append(f"skills/{domain_slug}/{skill_name}")
+
+                for candidate_path in candidate_paths:
+                    candidate_identifiers.append(
+                        f"{repo}/{candidate_path.strip('/')}"
+                    )
+
+                # Final fallback: crawl repo tree for any <skill>/SKILL.md match.
+                discovered = self._github._find_skill_in_repo_tree(repo, skill_name)
+                if discovered:
+                    candidate_identifiers.append(discovered)
+
+            # Preserve order, drop duplicates.
+            ordered_candidates: List[str] = list(
+                dict.fromkeys(
+                    c for c in candidate_identifiers if c.count("/") >= 2
+                )
+            )
+            for gh_identifier in ordered_candidates:
+                bundle = self._github.fetch(gh_identifier)
+                if bundle:
+                    break
         elif source_type == "url" and url:
             bundle = self._url.fetch(url)
 
@@ -1485,7 +1525,7 @@ class LiteLLMSkillHubSource(SkillSource):
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]
         if isinstance(data, dict):
-            for key in ("skills", "items", "data"):
+            for key in ("skills", "items", "data", "plugins"):
                 value = data.get(key)
                 if isinstance(value, list):
                     return [item for item in value if isinstance(item, dict)]
