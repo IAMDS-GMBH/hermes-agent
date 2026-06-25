@@ -1,7 +1,7 @@
 """LiteLLM A2A (Agent-to-Agent) tool.
 
 Calls external agents registered on a LiteLLM proxy via the A2A protocol
-(``POST <base_url>/a2a/<agent_name>``).  Only agents activated by the user
+(``POST <base_url>/a2a/<agent_name>/message/send``).  Only agents activated by the user
 in the Hub UI are exposed — the tool description lists them dynamically so
 the model knows which agents are available without extra discovery calls.
 
@@ -116,8 +116,8 @@ def _build_list_schema() -> dict[str, Any]:
 def _a2a_url(base_url: str, agent_name: str) -> str:
     hub = base_url.rstrip("/")
     if hub.endswith("/litellm"):
-        return f"{hub}/a2a/{agent_name}"
-    return f"{hub}/litellm/a2a/{agent_name}"
+        return f"{hub}/a2a/{agent_name}/message/send"
+    return f"{hub}/litellm/a2a/{agent_name}/message/send"
 
 
 def _extract_agent_content(data: Any) -> str:

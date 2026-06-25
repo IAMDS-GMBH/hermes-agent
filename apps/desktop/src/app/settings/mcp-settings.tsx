@@ -172,11 +172,35 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
     setReloading(true)
 
     try {
-      await gateway.request('reload.mcp', {
+      const result = await gateway.request<{
+        ok?: boolean
+        message?: string
+        summary?: {
+          connected?: number
+          configured_enabled?: number
+          failed?: number
+          failed_servers?: string[]
+        }
+      }>('reload.mcp', {
         confirm: true,
         session_id: activeSessionId ?? undefined
       })
-      notify({ kind: 'success', title: m.reloadedTitle, message: m.reloadedMessage })
+      if (result?.ok === false) {
+        const failedNames = result.summary?.failed_servers?.join(', ')
+        notify({
+          kind: 'warning',
+          title: m.reloadedTitle,
+          message: failedNames
+            ? `${result.message ?? m.reloadedMessage} (${failedNames})`
+            : (result.message ?? m.reloadedMessage)
+        })
+      } else {
+        notify({
+          kind: 'success',
+          title: m.reloadedTitle,
+          message: result?.message ?? m.reloadedMessage
+        })
+      }
     } catch (err) {
       notifyError(err, m.reloadFailed)
     } finally {

@@ -7323,7 +7323,7 @@ def _(rid, params: dict) -> dict:
                     },
                 )
 
-        from tools.mcp_tool import shutdown_mcp_servers, discover_mcp_tools
+        from tools.mcp_tool import shutdown_mcp_servers, discover_mcp_tools, get_mcp_status
 
         shutdown_mcp_servers()
         discover_mcp_tools()
@@ -7340,6 +7340,11 @@ def _(rid, params: dict) -> dict:
             # discovered MCP tools even when reload was triggered outside chat.
             _refresh_cached_agent_tools()
 
+        status_rows = get_mcp_status()
+        enabled_rows = [row for row in status_rows if not row.get("disabled")]
+        connected_rows = [row for row in enabled_rows if row.get("connected")]
+        failed_rows = [row for row in enabled_rows if not row.get("connected")]
+
         # Honor `always=true` by persisting the opt-out to config.
         if bool(params.get("always", False)):
             try:
@@ -7349,7 +7354,30 @@ def _(rid, params: dict) -> dict:
             except Exception as _exc:
                 logger.warning("Failed to persist mcp_reload_confirm=false: %s", _exc)
 
-        return _ok(rid, {"status": "reloaded"})
+        if failed_rows:
+            failed_names = [str(row.get("name", "<unknown>")) for row in failed_rows]
+            message = (
+                "MCP reload finished with disconnected servers: "
+                + ", ".join(failed_names)
+            )
+            logger.warning(message)
+        else:
+            message = "MCP servers reloaded"
+
+        return _ok(
+            rid,
+            {
+                "status": "reloaded",
+                "ok": len(failed_rows) == 0,
+                "message": message,
+                "summary": {
+                    "configured_enabled": len(enabled_rows),
+                    "connected": len(connected_rows),
+                    "failed": len(failed_rows),
+                    "failed_servers": [str(row.get("name", "<unknown>")) for row in failed_rows],
+                },
+            },
+        )
     except Exception as e:
         return _err(rid, 5015, str(e))
 
