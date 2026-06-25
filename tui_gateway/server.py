@@ -7331,8 +7331,14 @@ def _(rid, params: dict) -> dict:
         # up added/removed MCP tools without `/new` (which discards history).
         # The user already consented to prompt-cache invalidation via the
         # confirm gate above.
+        target_session_id = params.get("session_id", "")
         if session:
-            _refresh_cached_agent_tools(params.get("session_id", ""))
+            _refresh_cached_agent_tools(target_session_id)
+        else:
+            # Desktop settings can issue reload.mcp without an active session id.
+            # Refresh all live sessions so the running chat picks up newly
+            # discovered MCP tools even when reload was triggered outside chat.
+            _refresh_cached_agent_tools()
 
         # Honor `always=true` by persisting the opt-out to config.
         if bool(params.get("always", False)):

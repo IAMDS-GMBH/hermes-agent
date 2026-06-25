@@ -1907,8 +1907,7 @@ for name, spec in servers.items():
                     continue
                 headers[str(k)] = str(_expand_env(v))
         if not any(str(k).lower() == "accept" for k in headers):
-            transport = str(spec.get("transport") or "").strip().lower()
-            headers["Accept"] = "text/event-stream" if transport == "sse" else "application/json, text/event-stream;q=0.9, */*;q=0.8"
+            headers["Accept"] = "text/event-stream"
         req = urllib.request.Request(str(_expand_env(url)), headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=connect_timeout) as resp:
@@ -2244,9 +2243,8 @@ function Apply-BootstrapCredentials {
             # Upsert mcp_servers.companyMemory with Bearer auth using API key.
             # Keep other existing MCP servers untouched.
             $memoryEntry = @"
-  companyMemory:
-    url: $mcpServerUrl
-                transport: sse
+              companyMemory:
+                url: $mcpServerUrl
                 headers:
                   Authorization: "Bearer $bootstrapApiKey"
     timeout: 180
