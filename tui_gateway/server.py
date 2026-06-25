@@ -9968,15 +9968,12 @@ def _(rid, params: dict) -> dict:
 
     if not tenant_id or not client_id:
         return _err(rid, 5030, "tenant_id and client_id are required (missing from .env or params)")
-    
-    if not client_secret:
-        return _err(rid, 5031, "client_secret is required (missing from .env or params)")
 
     resolved_request_body = {
         "use_saved_env": bool(use_saved_env),
         "tenant_id": tenant_id,
         "client_id": client_id,
-        "client_secret": client_secret or "",
+        "client_secret": client_secret or "<none>",
     }
 
     try:

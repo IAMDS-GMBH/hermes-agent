@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
 import { StatusDot, type StatusTone } from '@/components/status-dot'
@@ -11,16 +12,19 @@ import {
   getMessagingPlatforms,
   type MessagingEnvVarInfo,
   type MessagingPlatformInfo,
+  testMessagingPlatform,
   updateMessagingPlatform
 } from '@/hermes'
 import { type Translations, useI18n } from '@/i18n'
 import { AlertTriangle, ExternalLink, Save, Trash2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { setComposerDraft } from '@/store/composer'
 import { notify, notifyError } from '@/store/notifications'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { PageSearchShell } from '../page-search-shell'
+import { NEW_CHAT_ROUTE } from '../routes'
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
@@ -82,6 +86,7 @@ const FIELD_COPY: Record<string, { advanced?: boolean }> = {
   WHATSAPP_ENABLED: { advanced: true },
   WHATSAPP_MODE: { advanced: true }
 }
+const OUTLOOK_VISIBLE_KEYS = new Set(['OUTLOOK_TENANT_ID', 'OUTLOOK_CLIENT_ID'])
 
 function fieldCopy(field: MessagingEnvVarInfo, m: Translations['messaging']) {
   const copy = FIELD_COPY[field.key] || {}
@@ -98,12 +103,14 @@ function fieldCopy(field: MessagingEnvVarInfo, m: Translations['messaging']) {
 export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...props }: MessagingViewProps) {
   const { t } = useI18n()
   const m = t.messaging
+  const navigate = useNavigate()
   const [platforms, setPlatforms] = useState<MessagingPlatformInfo[] | null>(null)
   const [edits, setEdits] = useState<EditMap>({})
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
   const [outlookAuthOpen, setOutlookAuthOpen] = useState(false)
+  const [outlookConnected, setOutlookConnected] = useState<boolean | null>(null)
   const platformIds = useMemo(() => platforms?.map(p => p.id) ?? [], [platforms])
   const [selectedId, setSelectedId] = useRouteEnumParam('platform', platformIds, platformIds[0] ?? '')
 
@@ -164,12 +171,14 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const outlookTenantEdit = (selected ? edits[selected.id]?.OUTLOOK_TENANT_ID : '') || ''
   const outlookClientEdit = (selected ? edits[selected.id]?.OUTLOOK_CLIENT_ID : '') || ''
   const outlookSecretEdit = (selected ? edits[selected.id]?.OUTLOOK_CLIENT_SECRET : '') || ''
-  const outlookHasAnyTypedCred = Boolean(
-    outlookTenantEdit.trim() || outlookClientEdit.trim() || outlookSecretEdit.trim()
-  )
+  const outlookHasAnyTypedCred = Boolean(outlookTenantEdit.trim() || outlookClientEdit.trim())
   const outlookHasAllTypedCreds = Boolean(
-    outlookTenantEdit.trim() && outlookClientEdit.trim() && outlookSecretEdit.trim()
+    outlookTenantEdit.trim() && outlookClientEdit.trim()
   )
+
+  useEffect(() => {
+    setOutlookConnected(null)
+  }, [selectedId, outlookTenantEdit, outlookClientEdit])
 
   const visiblePlatforms = useMemo(() => {
     if (!platforms) {
@@ -309,7 +318,12 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                   onToggle={enabled => void handleToggle(selected, enabled)}
                   platform={selected}
                   saving={saving}
-                  onOutlookAuthStart={() => setOutlookAuthOpen(true)}
+                  onOutlookTest={() => setOutlookAuthOpen(true)}
+                  onOutlookReadLatest={() => {
+                    setComposerDraft('Read my latest Outlook emails and summarize priorities with sender + action items.')
+                    navigate(NEW_CHAT_ROUTE)
+                  }}
+                  outlookConnected={selected.state === 'connected' ? true : outlookConnected}
                 />
                 {selected.id === 'outlook' && (
                   <OutlookAuthModal
@@ -318,10 +332,25 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                     clientId={outlookClientEdit}
                     clientSecret={outlookSecretEdit}
                     useSavedEnv={!outlookHasAnyTypedCred}
-                    onComplete={async accessToken => {
+                    onComplete={async _accessToken => {
                       // Save the refresh token (if available) to .env
                       // For now, just close the modal and refresh
                       setOutlookAuthOpen(false)
+                      setSaving(`test:${selected.id}`)
+                      try {
+                        const result = await testMessagingPlatform(selected.id)
+                        setOutlookConnected(Boolean(result.ok && result.state === 'connected'))
+                        notify({
+                          kind: result.ok ? 'success' : 'warning',
+                          title: result.ok ? `${selected.name} connected` : `${selected.name} test result`,
+                          message: result.message
+                        })
+                      } catch (err) {
+                        setOutlookConnected(false)
+                        notifyError(err, `${selected.name} test failed`)
+                      } finally {
+                        setSaving(null)
+                      }
                       await refreshPlatforms()
                     }}
                     onCancel={() => setOutlookAuthOpen(false)}
@@ -373,7 +402,9 @@ function PlatformDetail({
   onToggle,
   platform,
   saving,
-  onOutlookAuthStart
+  onOutlookTest,
+  onOutlookReadLatest,
+  outlookConnected
 }: {
   edits: Record<string, string>
   onClear: (key: string) => void
@@ -382,30 +413,35 @@ function PlatformDetail({
   onToggle: (enabled: boolean) => void
   platform: MessagingPlatformInfo
   saving: string | null
-  onOutlookAuthStart?: () => void
+  onOutlookTest?: () => void
+  onOutlookReadLatest?: () => void
+  outlookConnected?: boolean | null
 }) {
   const { t } = useI18n()
   const m = t.messaging
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const outlookOnlyIds = platform.id === 'outlook'
 
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
-  const requiredFields = platform.env_vars.filter(field => field.required)
-  const optionalFields = platform.env_vars.filter(field => !field.required && !fieldCopy(field, m).advanced)
-  const advancedFields = platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
+  const requiredFields = outlookOnlyIds
+    ? platform.env_vars.filter(field => OUTLOOK_VISIBLE_KEYS.has(field.key))
+    : platform.env_vars.filter(field => field.required)
+  const optionalFields = outlookOnlyIds
+    ? []
+    : platform.env_vars.filter(field => !field.required && !fieldCopy(field, m).advanced)
+  const advancedFields = outlookOnlyIds
+    ? []
+    : platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}`
+  const isTesting = saving === `test:${platform.id}`
   const hasOutlookSavedCreds =
     platform.id === 'outlook' &&
     platform.env_vars.some(e => e.key === 'OUTLOOK_TENANT_ID' && e.is_set) &&
-    platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_ID' && e.is_set) &&
-    platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_SECRET' && e.is_set)
+    platform.env_vars.some(e => e.key === 'OUTLOOK_CLIENT_ID' && e.is_set)
   const hasOutlookTypedCreds =
     platform.id === 'outlook' &&
-    Boolean(
-      (edits.OUTLOOK_TENANT_ID || '').trim() &&
-        (edits.OUTLOOK_CLIENT_ID || '').trim() &&
-        (edits.OUTLOOK_CLIENT_SECRET || '').trim()
-    )
+    Boolean((edits.OUTLOOK_TENANT_ID || '').trim() && (edits.OUTLOOK_CLIENT_ID || '').trim())
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -532,15 +568,23 @@ function PlatformDetail({
 
           <div className="ml-auto flex items-center gap-2">
             {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
-            {platform.id === 'outlook' && onOutlookAuthStart && (
+            {platform.id === 'outlook' && (
+              <SetupPill active={Boolean(outlookConnected)}>{outlookConnected ? m.states.connected : m.needsSetup}</SetupPill>
+            )}
+            {platform.id === 'outlook' && onOutlookTest && (
               <Button
-                onClick={onOutlookAuthStart}
+                onClick={onOutlookTest}
                 size="sm"
                 variant="outline"
-                disabled={!hasOutlookTypedCreds && !hasOutlookSavedCreds}
+                disabled={isTesting || (!hasOutlookTypedCreds && !hasOutlookSavedCreds)}
               >
                 <ExternalLink className="size-3.5" />
-                Authenticate
+                {isTesting ? 'Testing...' : 'Test'}
+              </Button>
+            )}
+            {platform.id === 'outlook' && onOutlookReadLatest && (
+              <Button onClick={onOutlookReadLatest} size="sm" variant="outline" disabled={!outlookConnected}>
+                Open latest emails
               </Button>
             )}
             <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
@@ -575,7 +619,7 @@ const PLATFORM_INTRO: Record<string, string> = {
   email:
     'Use a dedicated mailbox. For Gmail/Workspace, create an app password and use imap.gmail.com / smtp.gmail.com.',
   outlook:
-    'Create an Azure AD app with Mail.Read and Mail.Send application permissions, grant admin consent, then set tenant/client/secret and mailbox.',
+    'Create Azure app, grant delegated Mail.Read and Mail.Send, then set tenant ID + client ID. Use Test to complete device flow.',
   sms: 'Get your Twilio Account SID and Auth Token from the Twilio console, plus a phone number that can send SMS.',
   dingtalk: 'Create a DingTalk app in the developer console, then copy the Client ID (App key) and Client Secret here.',
   feishu:

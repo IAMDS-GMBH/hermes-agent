@@ -32,7 +32,7 @@ interface OutlookAuthModalProps {
   open: boolean
   tenantId: string
   clientId: string
-  clientSecret: string
+  clientSecret?: string
   useSavedEnv?: boolean
   onComplete: (accessToken: string) => void
   onCancel: () => void
@@ -42,7 +42,7 @@ export function OutlookAuthModal({
   open,
   tenantId,
   clientId,
-  clientSecret,
+  clientSecret = '',
   useSavedEnv = false,
   onComplete,
   onCancel
@@ -80,11 +80,10 @@ export function OutlookAuthModal({
     ;(async () => {
       try {
         // Validate required fields (skip if using saved env)
-        if (!useSavedEnv && (!tenantId.trim() || !clientId.trim() || !clientSecret.trim())) {
+        if (!useSavedEnv && (!tenantId.trim() || !clientId.trim())) {
           const missing = []
           if (!tenantId.trim()) missing.push('Tenant ID')
           if (!clientId.trim()) missing.push('Client ID')
-          if (!clientSecret.trim()) missing.push('Client Secret')
           throw new Error(`Missing required fields: ${missing.join(', ')}`)
         }
 
@@ -100,14 +99,14 @@ export function OutlookAuthModal({
           : {
               tenant_id: tenantId,
               client_id: clientId,
-              client_secret: clientSecret
+              ...(clientSecret.trim() ? { client_secret: clientSecret } : {})
             }
         const requestDebugPayload = useSavedEnv
           ? { use_saved_env: true }
           : {
               tenant_id: tenantId,
               client_id: clientId,
-              client_secret: clientSecret
+              ...(clientSecret.trim() ? { client_secret: clientSecret } : {})
             }
         setRequestDebug(JSON.stringify(requestDebugPayload, null, 2))
 

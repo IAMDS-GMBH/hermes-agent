@@ -3526,8 +3526,6 @@ _PLATFORM_OVERRIDES: dict[str, dict[str, Any]] = {
         "required_env": (
             "OUTLOOK_TENANT_ID",
             "OUTLOOK_CLIENT_ID",
-            "OUTLOOK_CLIENT_SECRET",
-            "OUTLOOK_MAILBOX",
         ),
     },
     "api_server": {
