@@ -3390,6 +3390,18 @@ if server_py.exists():
 
 print("patched" if changed else "already")
 PY
+
+    # macOS-specific guardrail: some managed install paths end up with a stale or
+    # unexpected agent/litellm_hub_client.py after patching. Keep the repository
+    # canonical on macOS by restoring this file from git right after the gateway
+    # patch step.
+    if [ "$OS" = "macos" ] && [ -d "$repo_dir/.git" ]; then
+        if git -C "$repo_dir" checkout -- agent/litellm_hub_client.py 2>/dev/null; then
+            log_info "macOS guardrail: restored agent/litellm_hub_client.py from git"
+        else
+            log_warn "macOS guardrail: failed to restore agent/litellm_hub_client.py from git"
+        fi
+    fi
 }
 
 # Patches the cloned desktop source to add the Discover / Hub sidebar section.
