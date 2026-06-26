@@ -9862,13 +9862,19 @@ def _(rid, params: dict) -> dict:
             resolved_url = f"{base_url}/public/skill_hub"
         else:
             resolved_url = f"{base_url}/litellm/public/skill_hub"
+        logger.info("[LiteLLM Hub] skills fetch: base_url=%r resolved_url=%s", base_url, resolved_url)
         data, error = fetch_litellm_hub_json("skill_hub", require_auth=False, settings=settings)
         if error:
+            logger.warning("[LiteLLM Hub] skills fetch failed: %s", error)
             return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")
 
         skills = data if isinstance(data, list) else (data.get("skills", []) or data.get("plugins", []) if data else [])
+        logger.info("[LiteLLM Hub] skills fetch OK: data_type=%s skills_count=%d", type(data).__name__, len(skills))
+        if isinstance(data, dict):
+            logger.info("[LiteLLM Hub] response keys: %s", sorted(data.keys()))
         return _ok(rid, {"skills": skills, "resolved_url": resolved_url})
     except Exception as e:
+        logger.exception("[LiteLLM Hub] skills fetch error: %s", e)
         return _err(rid, 5029, str(e))
 
 

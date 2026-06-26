@@ -191,6 +191,8 @@ COMPONENT_PREFIXES = {
         "hermes_cli.pty_bridge",
         "tui_gateway",
         "uvicorn",
+        "agent.litellm_hub_client",
+        "tools.skills_hub",
     ),
 }
 
