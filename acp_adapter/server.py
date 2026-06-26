@@ -1609,6 +1609,14 @@ class HermesACPAgent(acp.Agent):
                             self._send_session_info_update(session_id),
                         )
 
+                _agent = getattr(state, "agent", None)
+                _main_runtime = {
+                    "model": getattr(_agent, "model", None),
+                    "provider": getattr(_agent, "provider", None),
+                    "base_url": getattr(_agent, "base_url", None),
+                    "api_key": getattr(_agent, "api_key", None),
+                    "api_mode": getattr(_agent, "api_mode", None),
+                } if _agent else None
                 maybe_auto_title(
                     self.session_manager._get_db(),
                     session_id,
@@ -1616,6 +1624,7 @@ class HermesACPAgent(acp.Agent):
                     final_response,
                     state.history,
                     title_callback=_notify_title_update,
+                    main_runtime=_main_runtime,
                 )
             except Exception:
                 logger.debug("Failed to auto-title ACP session %s", session_id, exc_info=True)
