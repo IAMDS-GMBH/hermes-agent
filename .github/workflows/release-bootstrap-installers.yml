@@ -181,7 +181,8 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # subscription-id omitted: signing role is on the signing account resource,
+          # not on a subscription — the SP has no subscription-level role assignment.
 
       - name: Sign Windows installer with Azure Artifact Signing
         if: runner.os == 'Windows'
