@@ -83,6 +83,7 @@ export function HubView({ ...props }: HubViewProps) {
   const [showRaw, setShowRaw] = useState(false)
   const [installing, setInstalling] = useState<{ id: string; skill: LiteLLMSkill } | null>(null)
   const [installProgress, setInstallProgress] = useState<string>('')
+  const [installedSkillIds, setInstalledSkillIds] = useState<Set<string>>(new Set())
   const [togglingAgent, setTogglingAgent] = useState<string | null>(null)
 
   // Refresh handlers
@@ -171,6 +172,7 @@ export function HubView({ ...props }: HubViewProps) {
 
       if (result?.success) {
         setInstallProgress(`✓ Successfully installed: ${skill.name}`)
+        setInstalledSkillIds(prev => new Set(prev).add(skill.id))
         setTimeout(() => setInstalling(null), 2000)
       } else {
         setInstallProgress(`✗ Installation failed: ${result?.message || 'Unknown error'}`)
@@ -239,11 +241,13 @@ export function HubView({ ...props }: HubViewProps) {
           </>
         }
       >
+        {/* Fetching from URL — hidden until further development
         {resolvedUrl && (
           <div className="px-4 py-2 text-xs text-muted-foreground bg-secondary/50 border-b border-border m-0 font-mono break-all">
             Fetching from: {resolvedUrl}
           </div>
         )}
+        */}
 
         {error && (
           <div className="px-4 py-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 m-4 rounded">
@@ -261,9 +265,10 @@ export function HubView({ ...props }: HubViewProps) {
             onToggle={handleToggleAgent}
           />
         ) : (
-          <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} />
+        <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} installedIds={installedSkillIds} />
         )}
 
+        {/* Raw server response — hidden until further development
         {rawResponse !== null && (
           <div className="border-t border-border mt-2">
             <button
@@ -280,6 +285,7 @@ export function HubView({ ...props }: HubViewProps) {
             )}
           </div>
         )}
+        */}
         
         {installing && (
           <SkillInstallModal
@@ -366,9 +372,10 @@ interface SkillsListProps {
   skills: LiteLLMSkill[]
   query: string
   onInstall?: (skill: LiteLLMSkill) => void
+  installedIds?: Set<string>
 }
 
-function SkillsList({ skills, query, onInstall }: SkillsListProps) {
+function SkillsList({ skills, query, onInstall, installedIds }: SkillsListProps) {
   return (
     <div className="overflow-y-auto flex-1">
       {skills.length === 0 ? (
@@ -399,10 +406,16 @@ function SkillsList({ skills, query, onInstall }: SkillsListProps) {
                 </div>
                 {onInstall && (
                   <button
-                    onClick={() => onInstall(skill)}
-                    className="ml-2 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors flex-shrink-0"
+                    onClick={() => !installedIds?.has(skill.id) && onInstall(skill)}
+                    disabled={installedIds?.has(skill.id)}
+                    className={cn(
+                      'ml-2 px-2.5 py-1 text-xs font-medium rounded transition-colors flex-shrink-0',
+                      installedIds?.has(skill.id)
+                        ? 'text-green-600 dark:text-green-400 border border-green-500/40 cursor-default'
+                        : 'text-white bg-blue-600 hover:bg-blue-700'
+                    )}
                   >
-                    Install
+                    {installedIds?.has(skill.id) ? '✓ Installed' : 'Install'}
                   </button>
                 )}
               </div>
