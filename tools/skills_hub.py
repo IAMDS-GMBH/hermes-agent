@@ -479,15 +479,27 @@ class GitHubSource(SkillSource):
         results: List[SkillMeta] = []
         query_lower = query.lower()
 
+        logger.info("Search: looking for %r across %d taps", query, len(self.taps))
+        
         for tap in self.taps:
             try:
-                skills = self._list_skills_in_repo(tap["repo"], tap.get("path", ""))
+                # Auto-discover all SKILL.md files recursively, optionally filtered by base path
+                logger.debug("Search: querying tap %s@%s", tap["repo"], tap.get("path", "root"))
+                skills = self._find_all_skills_recursive(tap["repo"], tap.get("path", ""))
+                logger.debug("Search: tap %s returned %d skills", tap["repo"], len(skills))
+                
+                matched = 0
                 for skill in skills:
                     searchable = f"{skill.name} {skill.description} {' '.join(skill.tags)}".lower()
                     if query_lower in searchable:
+                        logger.debug("Search: matched %s", skill.name)
                         results.append(skill)
+                        matched += 1
+                
+                if matched:
+                    logger.info("Search: tap %s matched %d skills for %r", tap["repo"], matched, query)
             except Exception as e:
-                logger.debug(f"Failed to search {tap['repo']}: {e}")
+                logger.warning(f"Search: failed to query {tap['repo']}: {e}")
                 continue
 
         # Deduplicate by identifier, preferring higher trust levels.
@@ -502,6 +514,7 @@ class GitHubSource(SkillSource):
                 seen[r.identifier] = r
         results = list(seen.values())
 
+        logger.info("Search: returning %d results for %r (limit=%d)", len(results), query, limit)
         return results[:limit]
 
     def fetch(self, identifier: str) -> Optional[SkillBundle]:
@@ -612,7 +625,95 @@ class GitHubSource(SkillSource):
         self._write_cache(cache_key, [self._meta_to_dict(s) for s in skills])
         return skills
 
+    def _find_all_skills_recursive(self, repo: str, base_path: str = "") -> List[SkillMeta]:
+        """Find all SKILL.md files recursively anywhere under base_path in repo.
+        
+        Uses cached tree to avoid repeated API calls. Returns deduplicated skills
+        with their full identifier (repo/path/to/skill).
+        """
+        base_norm = base_path.rstrip("/") if base_path else ""
+        logger.info("Autodiscover: scanning %s (base_path=%r)", repo, base_path or "root")
+        
+        tree_result = self._get_repo_tree(repo)
+        if not tree_result:
+           logger.warning("Autodiscover: tree fetch failed for %s", repo)
+           return []
+        
+        _, entries = tree_result
+        logger.debug("Autodiscover: tree has %d entries for %s", len(entries), repo)
+        skills = {}  # identifier → SkillMeta, dedup by full path
+        
+        # Find all SKILL.md blobs and extract their parent directories
+        skill_dirs = set()
+        skill_md_count = 0
+        skipped_dotfiles = 0
+        
+        for entry in entries:
+           if entry.get("type") != "blob":
+               continue
+           path = entry.get("path", "")
+           if not path.endswith("/SKILL.md"):
+               continue
+            
+           skill_md_count += 1
+           # Extract skill directory (everything except SKILL.md)
+           skill_dir = "/".join(path.split("/")[:-1])
+            
+           # Filter by base_path if provided
+           if base_norm:
+               if not skill_dir.startswith(base_norm):
+                   logger.debug("Autodiscover: skip %s (not under base_path %s)", skill_dir, base_norm)
+                   continue
+               # Also require at least one skill dir component after base_path
+               # to avoid matching base_path itself
+               remaining = skill_dir[len(base_norm):].lstrip("/")
+               if not remaining:
+                   logger.debug("Autodiscover: skip %s (matches base_path exactly)", skill_dir)
+                   continue
+            
+           # Skip if any path component starts with . or _
+           if any(part.startswith((".", "_")) for part in skill_dir.split("/")):
+               skipped_dotfiles += 1
+               logger.debug("Autodiscover: skip %s (dot/underscore prefix)", skill_dir)
+               continue
+            
+           logger.debug("Autodiscover: found skill dir %s", skill_dir)
+           skill_dirs.add(skill_dir)
+        
+        logger.info(
+           "Autodiscover: found %d SKILL.md files, %d valid dirs (skipped %d dotfiles) in %s",
+           skill_md_count, len(skill_dirs), skipped_dotfiles, repo
+        )
+        
+        # Fetch metadata for each discovered skill directory
+        inspect_ok = 0
+        inspect_fail = 0
+        
+        for skill_dir in sorted(skill_dirs):
+           identifier = f"{repo}/{skill_dir}"
+           try:
+               logger.debug("Autodiscover: inspecting %s", identifier)
+               meta = self.inspect(identifier)
+               if meta:
+                   logger.info("Autodiscover: loaded %s (%s)", meta.name, identifier)
+                   skills[identifier] = meta
+                   inspect_ok += 1
+               else:
+                   logger.debug("Autodiscover: inspect returned None for %s", identifier)
+                   inspect_fail += 1
+           except Exception as e:
+               logger.warning("Autodiscover: inspect failed for %s: %s", identifier, e)
+               inspect_fail += 1
+        
+        logger.info(
+           "Autodiscover: complete for %s - %d loaded, %d failed",
+           repo, inspect_ok, inspect_fail
+        )
+        
+        return list(skills.values())
+
     # -- Repo tree cache (avoids redundant API calls) --
+
 
     def _get_repo_tree(self, repo: str) -> Optional[Tuple[str, List[dict]]]:
         """Get cached or fresh repo tree.
