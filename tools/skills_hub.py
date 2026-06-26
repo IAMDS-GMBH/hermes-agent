@@ -4112,6 +4112,7 @@ def find_skill_md_in_repo(
     owner: str,
     repo: str,
     skill_id_hint: str = "",
+    plugin_name: str = "",
     *,
     auth: Optional["GitHubAuth"] = None,
 ) -> Optional[Tuple[str, str]]:
@@ -4120,8 +4121,12 @@ def find_skill_md_in_repo(
     Returns ``(raw_url, path_in_repo)`` of the best match, or ``None``.
     Uses the tree API so it works for any nesting depth.
 
-    ``skill_id_hint`` is a fuzzy hint (skill_id or name) used to rank
-    candidates when multiple SKILL.md files exist in the repo.
+    Scoring (lower = better):
+    - Deprecated paths (any segment is "deprecated") → disqualified entirely
+    - plugin_name exact match in path dir → -20 pts
+    - skill_id_hint substring match in path dir → -10 pts
+    - namespace/domain match (first path segment) → -5 pts
+    - Shallower path (fewer slashes) → small bonus
     """
     if auth is None:
         auth = GitHubAuth()
@@ -4156,30 +4161,73 @@ def find_skill_md_in_repo(
         logger.warning("find_skill_md_in_repo: tree fetch failed for %s/%s: %s", owner, repo, exc)
         return None
 
-    # Collect all SKILL.md blob paths
-    skill_paths = [
+    # Collect all SKILL.md blob paths, skipping deprecated
+    _deprecated_markers = {"deprecated", ".deprecated", "_deprecated", "archive", ".archive"}
+
+    def _is_deprecated(path: str) -> bool:
+        parts = {p.lower() for p in path.split("/")}
+        return bool(parts & _deprecated_markers)
+
+    all_skill_paths = [
         e["path"] for e in entries
         if e.get("type") == "blob" and e.get("path", "").endswith("/SKILL.md")
     ]
+    skill_paths = [p for p in all_skill_paths if not _is_deprecated(p)]
+    skipped_deprecated = len(all_skill_paths) - len(skill_paths)
+
     logger.info(
-        "find_skill_md_in_repo: %s/%s@%s — found %d SKILL.md file(s): %s",
-        owner, repo, default_branch, len(skill_paths), skill_paths,
+        "find_skill_md_in_repo: %s/%s@%s — found %d SKILL.md (skipped %d deprecated): %s",
+        owner, repo, default_branch, len(skill_paths), skipped_deprecated, skill_paths,
     )
 
     if not skill_paths:
+        if all_skill_paths:
+            logger.warning("find_skill_md_in_repo: all %d candidates were deprecated", len(all_skill_paths))
         return None
 
-    # Score candidates against hint (lower = better match)
-    hint_norm = skill_id_hint.strip("/").lower()
+    # Normalise hints for matching
+    hint_norm = skill_id_hint.strip("/").lower().replace("_", "-")
+    name_norm = plugin_name.strip().lower().replace("_", "-")
+    # Extract namespace hint from skill_id (first component before /)
+    ns_hint = hint_norm.split("/")[0] if "/" in hint_norm else ""
 
-    def _score(path: str) -> int:
-        skill_dir = "/".join(path.split("/")[:-1]).lower()
+    def _score(path: str) -> float:
+        skill_dir = "/".join(path.split("/")[:-1]).lower().replace("_", "-")
+        dir_parts = skill_dir.split("/")
+        score = 0.0
+
+        # Plugin name exact dir match → strong signal
+        if name_norm and name_norm in dir_parts:
+            score -= 20
+        elif name_norm and any(name_norm in p for p in dir_parts):
+            score -= 10
+
+        # skill_id_hint substring match
         if hint_norm and hint_norm in skill_dir:
-            return 0
-        # Prefer shallower paths (fewer slashes)
-        return path.count("/")
+            score -= 10
+        elif hint_norm:
+            # Partial token match
+            hint_tokens = hint_norm.replace("/", "-").split("-")
+            matches = sum(1 for t in hint_tokens if t and any(t in p for p in dir_parts))
+            score -= matches * 3
 
-    best = min(skill_paths, key=_score)
+        # Namespace/domain match (first segment)
+        if ns_hint and dir_parts and dir_parts[0] == ns_hint:
+            score -= 5
+
+        # Prefer shallower paths (fewer slashes = simpler location)
+        score += path.count("/") * 0.5
+
+        return score
+
+    scored = sorted(skill_paths, key=_score)
+    logger.info(
+        "find_skill_md_in_repo: scored candidates (plugin=%r hint=%r):\n%s",
+        plugin_name, skill_id_hint,
+        "\n".join(f"  {_score(p):+.1f}  {p}" for p in scored),
+    )
+
+    best = scored[0]
     raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{best}"
     logger.info("find_skill_md_in_repo: best match → %s (raw: %s)", best, raw_url)
     return raw_url, best

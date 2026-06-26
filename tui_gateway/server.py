@@ -9945,9 +9945,14 @@ def _(rid, params: dict) -> dict:
         logger.info("[LiteLLM Hub] skill_install: trying %d URL candidates:\n  %s", len(url_candidates), "\n  ".join(url_candidates))
 
         try:
-            # First try tree-based discovery — finds SKILL.md at any depth
-            from tools.skills_hub import find_skill_md_in_repo
-            tree_result = find_skill_md_in_repo(owner, repo, skill_id_hint=skill_path_no_prefix)
+            # First try tree-based discovery — finds SKILL.md at any depth,
+            # scores by plugin name + hint match, skips deprecated paths.
+            from tools.skills_hub import find_skill_md_in_repo, HubLockFile, SKILLS_DIR as HUB_SKILLS_DIR
+            tree_result = find_skill_md_in_repo(
+                owner, repo,
+                skill_id_hint=skill_path_no_prefix,
+                plugin_name=skill_name,
+            )
             if tree_result:
                 skill_md_url, found_path = tree_result
                 logger.info("[LiteLLM Hub] skill_install: tree discovery found %s → %s", found_path, skill_md_url)
@@ -9963,6 +9968,7 @@ def _(rid, params: dict) -> dict:
                 last_status = None
                 skill_md_url = ""
                 resp = None
+                found_path = skill_path_no_prefix
                 for candidate in url_candidates:
                     skill_md_url = candidate
                     resp = requests.get(skill_md_url, timeout=30)
@@ -9984,26 +9990,49 @@ def _(rid, params: dict) -> dict:
                         5035,
                         f"Skill not found. Tried tree discovery + {len(url_candidates)} fallback URLs (last HTTP {last_status})",
                     )
-                found_path = skill_path_no_prefix
 
-            # Install: derive local dir from the actual discovered path, not the hint
-            # e.g. found_path = "skills/caveman/SKILL.md" → install as "caveman"
+            # Derive install name from the actual discovered path (last non-SKILL.md dir segment)
             path_parts = found_path.rstrip("/").replace("/SKILL.md", "").split("/")
-            # Strip leading "skills/" prefix if present
             if path_parts and path_parts[0].lower() == "skills":
                 path_parts = path_parts[1:]
-            install_rel = "/".join(path_parts) if path_parts else skill_path_no_prefix
+            install_name = path_parts[-1] if path_parts else (skill_name or skill_path_no_prefix)
 
-            skill_install_dir = skills_dir / install_rel
+            # Always install under the "from_skill_hub" category so these show
+            # up grouped as "From Skill Hub" in the Skills & Tools window.
+            skill_install_dir = HUB_SKILLS_DIR / "from_skill_hub" / install_name
             skill_install_dir.mkdir(parents=True, exist_ok=True)
             skill_md_path = skill_install_dir / "SKILL.md"
             skill_md_path.write_text(resp.text, encoding="utf-8")
 
+            # Record in hub lock file so the UI can mark the skill as installed.
+            import hashlib
+            content_hash = hashlib.sha256(resp.text.encode()).hexdigest()
+            hub_identifier = f"litellm_hub:{owner}/{repo}/{install_name}"
+            try:
+                lock = HubLockFile()
+                lock.record_install(
+                    name=install_name,
+                    source=f"github:{owner}/{repo}",
+                    identifier=hub_identifier,
+                    trust_level="community",
+                    scan_verdict="unscanned",
+                    skill_hash=content_hash,
+                    install_path=str(skill_install_dir.relative_to(HUB_SKILLS_DIR)),
+                    files=["SKILL.md"],
+                    metadata={
+                        "plugin_name": skill_name,
+                        "skill_id": skill_id,
+                        "resolved_url": skill_md_url,
+                        "found_path": found_path,
+                    },
+                )
+                logger.info("[LiteLLM Hub] Recorded install in lock file: %s → %s", install_name, hub_identifier)
+            except Exception as lock_err:
+                logger.warning("[LiteLLM Hub] Failed to record lock entry for %s: %s", install_name, lock_err)
+
             logger.info(
                 "[LiteLLM Hub] Installed %s from %s to %s",
-                skill_name,
-                skill_md_url,
-                skill_install_dir,
+                skill_name, skill_md_url, skill_install_dir,
             )
             return _ok(
                 rid,
@@ -10011,6 +10040,8 @@ def _(rid, params: dict) -> dict:
                     "success": True,
                     "message": f"Successfully installed {skill_name}",
                     "resolved_url": skill_md_url,
+                    "install_path": str(skill_install_dir),
+                    "identifier": hub_identifier,
                 },
             )
         except requests.RequestException as e:
