@@ -144,23 +144,18 @@ jobs:
         with:
           workspaces: apps/bootstrap-installer/src-tauri
 
+      - name: Setup Python
+        if: steps.version.outputs.installer_version != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Sync Python package version from release tag
         if: steps.version.outputs.installer_version != ''
         shell: bash
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.installer_version }}
-        run: |
-          set -euo pipefail
-          if command -v py >/dev/null 2>&1; then
-            py -3 scripts/set_version.py "$RELEASE_VERSION"
-          elif command -v python3 >/dev/null 2>&1; then
-            python3 scripts/set_version.py "$RELEASE_VERSION"
-          elif command -v python >/dev/null 2>&1; then
-            python scripts/set_version.py "$RELEASE_VERSION"
-          else
-            echo "::error::No Python launcher found (tried: py, python3, python)"
-            exit 1
-          fi
+        run: python scripts/set_version.py "$RELEASE_VERSION"
 
       - name: Build bootstrap installer
         run: npm run tauri:build
