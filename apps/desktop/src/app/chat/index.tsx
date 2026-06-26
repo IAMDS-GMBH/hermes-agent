@@ -7,7 +7,7 @@ import {
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
-import { Suspense, useCallback, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { Thread } from '@/components/assistant-ui/thread'
@@ -194,7 +194,6 @@ export function ChatView({
   const introSeed = useStore($introSeed)
   const messages = useStore($messages)
   const selectedSessionId = useStore($selectedStoredSessionId)
-  const runtimeMessageCacheRef = useRef(new WeakMap<ChatMessage, ThreadMessage>())
   const isRoutedSessionView = Boolean(routeSessionId(location.pathname))
 
   const showIntro =
@@ -270,12 +269,7 @@ export function ChatView({
         parentId = branchParentByGroup.get(message.branchGroupId) ?? null
       }
 
-      const cachedMessage = runtimeMessageCacheRef.current.get(message)
-      const runtimeMessage = cachedMessage ?? toRuntimeMessage(message)
-
-      if (!cachedMessage) {
-        runtimeMessageCacheRef.current.set(message, runtimeMessage)
-      }
+      const runtimeMessage = toRuntimeMessage(message)
 
       items.push({ message: runtimeMessage, parentId })
 
