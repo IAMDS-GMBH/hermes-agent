@@ -2305,6 +2305,122 @@ class TestInstallPathSafety:
         assert victim.exists()
         assert (victim / "important").read_text() == "don't delete me"
 
+    def test_uninstall_removes_recursive_dependencies(self, tmp_path, isolated_skills_dir, patch_lock_file):
+        from tools.skills_hub import uninstall_skill
+
+        root_dir = isolated_skills_dir / "from_skill_hub" / "grill-me"
+        dep_dir = isolated_skills_dir / "from_skill_hub" / ".hub" / "deps" / "grilling"
+        root_dir.mkdir(parents=True)
+        dep_dir.mkdir(parents=True)
+        (root_dir / "SKILL.md").write_text("root")
+        (dep_dir / "SKILL.md").write_text("dep")
+
+        lock_path = tmp_path / "lock.json"
+        lock_path.write_text(json.dumps({
+            "installed": {
+                "grill-me": {
+                    "source": "github:owner/repo",
+                    "identifier": "litellm_hub:owner/repo/grill-me",
+                    "trust_level": "community",
+                    "scan_verdict": "unscanned",
+                    "content_hash": "h1",
+                    "install_path": "from_skill_hub/grill-me",
+                    "files": ["SKILL.md"],
+                    "metadata": {},
+                    "installed_at": "now",
+                    "updated_at": "now",
+                },
+                "grilling": {
+                    "source": "github:owner/repo",
+                    "identifier": "litellm_hub:owner/repo/grilling",
+                    "trust_level": "community",
+                    "scan_verdict": "unscanned",
+                    "content_hash": "h2",
+                    "install_path": "from_skill_hub/.hub/deps/grilling",
+                    "files": ["SKILL.md"],
+                    "metadata": {"dependency_of": "grill-me", "hidden_from_listing": True},
+                    "installed_at": "now",
+                    "updated_at": "now",
+                },
+            }
+        }))
+
+        patch_lock_file(lock_path)
+        ok, msg = uninstall_skill("grill-me")
+        assert ok is True
+        assert "Uninstalled 2 skills" in msg
+        assert not root_dir.exists()
+        assert not dep_dir.exists()
+        installed_after = json.loads(lock_path.read_text()).get("installed", {})
+        assert "grill-me" not in installed_after
+        assert "grilling" not in installed_after
+
+    def test_uninstall_keeps_dependency_with_other_parent(self, tmp_path, isolated_skills_dir, patch_lock_file):
+        from tools.skills_hub import uninstall_skill
+
+        root_a = isolated_skills_dir / "from_skill_hub" / "grill-me"
+        root_b = isolated_skills_dir / "from_skill_hub" / "bbq-plan"
+        shared_dep = isolated_skills_dir / "from_skill_hub" / ".hub" / "deps" / "grilling"
+        root_a.mkdir(parents=True)
+        root_b.mkdir(parents=True)
+        shared_dep.mkdir(parents=True)
+        (root_a / "SKILL.md").write_text("a")
+        (root_b / "SKILL.md").write_text("b")
+        (shared_dep / "SKILL.md").write_text("dep")
+
+        lock_path = tmp_path / "lock.json"
+        lock_path.write_text(json.dumps({
+            "installed": {
+                "grill-me": {
+                    "source": "github:owner/repo",
+                    "identifier": "litellm_hub:owner/repo/grill-me",
+                    "trust_level": "community",
+                    "scan_verdict": "unscanned",
+                    "content_hash": "h1",
+                    "install_path": "from_skill_hub/grill-me",
+                    "files": ["SKILL.md"],
+                    "metadata": {},
+                    "installed_at": "now",
+                    "updated_at": "now",
+                },
+                "bbq-plan": {
+                    "source": "github:owner/repo",
+                    "identifier": "litellm_hub:owner/repo/bbq-plan",
+                    "trust_level": "community",
+                    "scan_verdict": "unscanned",
+                    "content_hash": "h3",
+                    "install_path": "from_skill_hub/bbq-plan",
+                    "files": ["SKILL.md"],
+                    "metadata": {},
+                    "installed_at": "now",
+                    "updated_at": "now",
+                },
+                "grilling": {
+                    "source": "github:owner/repo",
+                    "identifier": "litellm_hub:owner/repo/grilling",
+                    "trust_level": "community",
+                    "scan_verdict": "unscanned",
+                    "content_hash": "h2",
+                    "install_path": "from_skill_hub/.hub/deps/grilling",
+                    "files": ["SKILL.md"],
+                    "metadata": {"dependency_of": ["grill-me", "bbq-plan"], "hidden_from_listing": True},
+                    "installed_at": "now",
+                    "updated_at": "now",
+                },
+            }
+        }))
+
+        patch_lock_file(lock_path)
+        ok, _ = uninstall_skill("grill-me")
+        assert ok is True
+        assert not root_a.exists()
+        assert root_b.exists()
+        assert shared_dep.exists()
+        installed_after = json.loads(lock_path.read_text()).get("installed", {})
+        assert "grill-me" not in installed_after
+        assert "bbq-plan" in installed_after
+        assert "grilling" in installed_after
+
     def test_install_from_quarantine_rejects_symlinks(self, tmp_path):
         """Skill install must not follow symlinks that leak file contents
         from outside the quarantine directory."""

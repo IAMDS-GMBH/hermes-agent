@@ -3741,33 +3741,83 @@ def install_from_quarantine(
 
 
 def uninstall_skill(skill_name: str) -> Tuple[bool, str]:
-    """Remove a hub-installed skill. Refuses to remove builtins."""
+    """Remove a hub-installed skill.
+
+    Also removes transitive dependent sub-skills recorded via
+    ``metadata.dependency_of`` when all their recorded parents are being
+    removed in the same operation.
+    """
     lock = HubLockFile()
     entry = lock.get_installed(skill_name)
     if not entry:
         return False, f"'{skill_name}' is not a hub-installed skill (may be a builtin)"
 
-    # Validate the lock entry's install_path against the skill name. This is
-    # the destructive boundary — anything that falls through to the rmtree
-    # below MUST be inside SKILLS_DIR and MUST NOT be SKILLS_DIR itself
-    # (an empty/"."/"/" install_path would otherwise wipe the entire tree).
-    # _resolve_lock_install_path enforces a relative path ending in
-    # <skill_name>, rejects absolute/traversal paths, and walks the path
-    # component-by-component refusing symlink/junction redirects.
-    try:
-        install_path = _resolve_lock_install_path(
-            entry.get("install_path", ""), skill_name
+    def _metadata_parents(item: dict) -> Set[str]:
+        metadata = item.get("metadata") if isinstance(item, dict) else None
+        if not isinstance(metadata, dict):
+            return set()
+        raw = metadata.get("dependency_of")
+        if isinstance(raw, str):
+            value = raw.strip()
+            return {value} if value else set()
+        if isinstance(raw, list):
+            return {
+                str(v).strip()
+                for v in raw
+                if isinstance(v, (str, int, float)) and str(v).strip()
+            }
+        return set()
+
+    installed_entries = {e["name"]: e for e in lock.list_installed() if e.get("name")}
+    to_remove: Set[str] = {skill_name}
+    # Grow removal set transitively: remove dependents only when all their
+    # declared parents are also being removed.
+    changed = True
+    while changed:
+        changed = False
+        for name, item in installed_entries.items():
+            if name in to_remove:
+                continue
+            parents = _metadata_parents(item)
+            if parents and parents.issubset(to_remove):
+                to_remove.add(name)
+                changed = True
+
+    # Validate every target path up front before deleting anything.
+    resolved_targets: List[Tuple[str, dict, Path]] = []
+    for name in sorted(to_remove):
+        current = installed_entries.get(name)
+        if not current:
+            continue
+        try:
+            install_path = _resolve_lock_install_path(
+                current.get("install_path", ""), name
+            )
+        except ValueError as exc:
+            return False, f"Refusing to uninstall '{name}': {exc}"
+        resolved_targets.append((name, current, install_path))
+
+    # Delete deepest paths first so parent/child overlaps are safe.
+    resolved_targets.sort(key=lambda item: len(item[2].parts), reverse=True)
+    removed_names: List[str] = []
+    for name, current, install_path in resolved_targets:
+        if install_path.exists():
+            shutil.rmtree(install_path)
+        lock.record_uninstall(name)
+        removed_names.append(name)
+        append_audit_log(
+            "UNINSTALL",
+            name,
+            current.get("source", "unknown"),
+            current.get("trust_level", "community"),
+            "n/a",
+            "recursive_user_request" if name != skill_name else "user_request",
         )
-    except ValueError as exc:
-        return False, f"Refusing to uninstall '{skill_name}': {exc}"
 
-    if install_path.exists():
-        shutil.rmtree(install_path)
-
-    lock.record_uninstall(skill_name)
-    append_audit_log("UNINSTALL", skill_name, entry["source"], entry["trust_level"], "n/a", "user_request")
-
-    return True, f"Uninstalled '{skill_name}' from {entry['install_path']}"
+    if len(removed_names) <= 1:
+        return True, f"Uninstalled '{skill_name}' from {entry['install_path']}"
+    removed_display = ", ".join(removed_names)
+    return True, f"Uninstalled {len(removed_names)} skills: {removed_display}"
 
 
 def bundle_content_hash(bundle: SkillBundle) -> str:
