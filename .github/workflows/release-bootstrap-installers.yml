@@ -152,6 +152,22 @@ jobs:
           HERMES_BUILD_PIN_COMMIT: ${{ github.sha }}
           HERMES_BUILD_PIN_BRANCH: ${{ github.ref_name }}
 
+      - name: Install Azure CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+            Write-Host "Azure CLI not found, installing..."
+            Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile AzureCLI.msi
+            Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
+            Remove-Item AzureCLI.msi
+            # Refresh PATH for subsequent steps
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            Write-Host "Azure CLI installed: $(az version --output json | ConvertFrom-Json | Select-Object -ExpandProperty 'azure-cli')"
+          } else {
+            Write-Host "Azure CLI already present: $(az version --output json | ConvertFrom-Json | Select-Object -ExpandProperty 'azure-cli')"
+          }
+
       - name: Azure login (OIDC)
         if: runner.os == 'Windows'
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
