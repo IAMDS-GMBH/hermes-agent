@@ -2278,9 +2278,11 @@ function Apply-BootstrapCredentials {
         Write-Success "Updated $configPath with bootstrap credentials"
     }
 
-    # Update .env with secrets
+    # Update .env with secrets.
+    # On update/reinstall flows bootstrapApiKey can be empty; appending
+    # OPENAI_API_KEY= would shadow the user's existing key with a blank value.
     $envPath = "$HermesHome\.env"
-    if (Test-Path $envPath) {
+    if ((Test-Path $envPath) -and (-not [string]::IsNullOrWhiteSpace($bootstrapApiKey))) {
         $envContent = @"
 # Added by bootstrap installer
 OPENAI_API_KEY=$bootstrapApiKey
@@ -2290,6 +2292,8 @@ OPENAI_API_KEY=$bootstrapApiKey
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::AppendAllText($envPath, $envContent, $utf8NoBom)
         Write-Success "Configured $envPath with API key"
+    } elseif ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
+        Write-Info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in $envPath"
     }
 
     # Patch hermes-agent: pin openai-api to fetched model list, suppress copilot

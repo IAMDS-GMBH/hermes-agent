@@ -1987,8 +1987,10 @@ PYEOF
         fi
     fi
 
-    # Update .env with secrets
-    if [ -f "$HERMES_HOME/.env" ]; then
+    # Update .env with secrets.
+    # On update/reinstall flows HERMES_BOOTSTRAP_API_KEY may be empty; appending
+    # OPENAI_API_KEY= would shadow the user's existing key with a blank value.
+    if [ -n "${HERMES_BOOTSTRAP_API_KEY:-}" ] && [ -f "$HERMES_HOME/.env" ]; then
         # Write API key
         {
             echo "# Added by bootstrap installer"
@@ -1996,6 +1998,8 @@ PYEOF
         } >> "$HERMES_HOME/.env"
 
         log_success "Configured .env with API key"
+    elif [ -z "${HERMES_BOOTSTRAP_API_KEY:-}" ]; then
+        log_info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in ~/.hermes/.env"
     fi
 }
 
