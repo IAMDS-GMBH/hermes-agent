@@ -9991,7 +9991,12 @@ def _(rid, params: dict) -> dict:
         def _norm_skill_token(value: str) -> str:
             return value.strip().strip("`\"'.,:;!?()[]{}").lower().replace("_", "-")
 
-        def _extract_skill_refs(markdown: str, *, current_name: str, available: set[str]) -> set[str]:
+        def _extract_skill_refs(
+            markdown: str,
+            *,
+            current_name: str,
+            available: Optional[set[str]] = None,
+        ) -> set[str]:
             refs: set[str] = set()
             fm, body = parse_frontmatter(markdown or "")
             candidates: list[str] = []
@@ -10008,7 +10013,7 @@ def _(rid, params: dict) -> dict:
                 token = _norm_skill_token(str(c))
                 if not token or token == current:
                     continue
-                if token in available:
+                if not available or token in available:
                     refs.add(token)
             return refs
 
@@ -10171,7 +10176,7 @@ def _(rid, params: dict) -> dict:
                         _extract_skill_refs(
                             resp.text,
                             current_name=install_name_norm,
-                            available=available_names,
+                            available=available_names or None,
                         )
                     )
                 )
@@ -10183,16 +10188,38 @@ def _(rid, params: dict) -> dict:
                         continue
                     visited.add(dep_name)
                     dep_path = repo_skills.get(dep_name)
-                    if not dep_path:
-                        continue
                     if lock:
                         try:
                             if lock.get_installed(dep_name):
                                 continue
                         except Exception:
                             pass
-                    dep_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{dep_path}"
-                    dep_resp = requests.get(dep_url, timeout=30)
+                    dep_url = ""
+                    dep_resp = None
+                    if dep_path:
+                        dep_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{dep_path}"
+                        dep_resp = requests.get(dep_url, timeout=30)
+                    else:
+                        fallback_paths = [
+                            f"skills/{dep_name}/SKILL.md",
+                            f"{dep_name}/SKILL.md",
+                        ]
+                        for fp in fallback_paths:
+                            trial_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{fp}"
+                            trial_resp = requests.get(trial_url, timeout=30)
+                            logger.info(
+                                "[LiteLLM Hub] skill_install: dependency fallback GET %s → HTTP %d",
+                                trial_url,
+                                trial_resp.status_code,
+                            )
+                            if trial_resp.status_code == 200:
+                                dep_path = fp
+                                dep_url = trial_url
+                                dep_resp = trial_resp
+                                break
+                    if dep_resp is None:
+                        hidden_failed.append(dep_name)
+                        continue
                     logger.info("[LiteLLM Hub] skill_install: dependency GET %s → HTTP %d", dep_url, dep_resp.status_code)
                     if dep_resp.status_code != 200:
                         hidden_failed.append(dep_name)
@@ -10236,7 +10263,7 @@ def _(rid, params: dict) -> dict:
                     child_refs = _extract_skill_refs(
                         dep_resp.text,
                         current_name=dep_name,
-                        available=available_names,
+                        available=available_names or None,
                     )
                     for child in sorted(child_refs):
                         if child not in visited:

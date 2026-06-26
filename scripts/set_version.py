@@ -55,7 +55,7 @@ def _patch_pyproject(version: str) -> None:
         print(f"  pyproject.toml: version already {version!r}, no change")
     else:
         path.write_text(new_text)
-        print(f"  pyproject.toml: version → {version!r}")
+        print(f"  pyproject.toml: version -> {version!r}")
 
 
 def _patch_init(version: str, release_date: str) -> None:
@@ -77,7 +77,7 @@ def _patch_init(version: str, release_date: str) -> None:
         print(f"  hermes_cli/__init__.py: already up to date")
     else:
         path.write_text(new_text)
-        print(f"  hermes_cli/__init__.py: version → {version!r}, date → {release_date!r}")
+        print(f"  hermes_cli/__init__.py: version -> {version!r}, date -> {release_date!r}")
 
 
 def main() -> None:
