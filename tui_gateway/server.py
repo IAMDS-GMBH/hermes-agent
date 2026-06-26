@@ -9870,24 +9870,27 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")
 
         raw_skills = data if isinstance(data, list) else (data.get("skills", []) or data.get("plugins", []) if data else [])
-        installed_skill_ids = set()
-        installed_skill_names = set()
-        installed_identifiers = set()
+        installed_skill_ids: dict[str, str] = {}
+        installed_skill_names: dict[str, str] = {}
+        installed_identifiers: dict[str, str] = {}
         try:
             for entry in HubLockFile().list_installed():
+                entry_name = str(entry.get("name") or "").strip()
+                if not entry_name:
+                    continue
                 identifier = str(entry.get("identifier") or "").strip()
                 if identifier.startswith("litellm_hub:"):
-                    installed_identifiers.add(identifier)
-                name = str(entry.get("name") or "").strip().lower()
+                    installed_identifiers[identifier] = entry_name
+                name = entry_name.lower()
                 if name:
-                    installed_skill_names.add(name)
+                    installed_skill_names[name] = entry_name
                 metadata = entry.get("metadata") or {}
                 skill_id = str(metadata.get("skill_id") or "").strip().lower()
                 if skill_id:
-                    installed_skill_ids.add(skill_id)
+                    installed_skill_ids[skill_id] = entry_name
                 plugin_name = str(metadata.get("plugin_name") or "").strip().lower()
                 if plugin_name:
-                    installed_skill_names.add(plugin_name)
+                    installed_skill_names[plugin_name] = entry_name
         except Exception:
             pass
 
@@ -9899,17 +9902,28 @@ def _(rid, params: dict) -> dict:
             item = dict(skill)
             sid = str(item.get("id") or "").strip().lower()
             sname = str(item.get("name") or "").strip().lower()
-            installed = (sid and sid in installed_skill_ids) or (sname and sname in installed_skill_names)
+            matched_installed_name = ""
+            if sid and sid in installed_skill_ids:
+                matched_installed_name = installed_skill_ids[sid]
+            elif sname and sname in installed_skill_names:
+                matched_installed_name = installed_skill_names[sname]
+            installed = bool(matched_installed_name)
             if not installed:
                 source = item.get("source")
                 if isinstance(source, dict):
                     repo = str(source.get("repo") or "").strip()
                     if repo:
-                        if sid and f"litellm_hub:{repo}/{sid}" in installed_identifiers:
+                        ident_by_sid = f"litellm_hub:{repo}/{sid}" if sid else ""
+                        ident_by_name = f"litellm_hub:{repo}/{sname}" if sname else ""
+                        if ident_by_sid and ident_by_sid in installed_identifiers:
+                            matched_installed_name = installed_identifiers[ident_by_sid]
                             installed = True
-                        elif sname and f"litellm_hub:{repo}/{sname}" in installed_identifiers:
+                        elif ident_by_name and ident_by_name in installed_identifiers:
+                            matched_installed_name = installed_identifiers[ident_by_name]
                             installed = True
             item["installed"] = bool(installed)
+            if matched_installed_name:
+                item["installed_name"] = matched_installed_name
             skills.append(item)
         logger.info("[LiteLLM Hub] skills fetch OK: data_type=%s skills_count=%d", type(data).__name__, len(skills))
         if isinstance(data, dict):
@@ -10254,6 +10268,23 @@ def _(rid, params: dict) -> dict:
     except Exception as e:
         logging.getLogger(__name__).error(f"[LiteLLM Hub] Skill install error: {e}")
         return _err(rid, 5039, str(e))
+
+
+@method("litellm_hub.skill_uninstall")
+def _(rid, params: dict) -> dict:
+    """Uninstall a skill (recursive) via Hub lock metadata."""
+    try:
+        skill_name = (params.get("skill_name") or "").strip()
+        if not skill_name:
+            return _err(rid, 5040, "skill_name is required")
+        from tools.skills_hub import uninstall_skill
+
+        ok, message = uninstall_skill(skill_name)
+        if not ok:
+            return _err(rid, 5041, message)
+        return _ok(rid, {"success": True, "message": message, "skill_name": skill_name})
+    except Exception as e:
+        return _err(rid, 5042, str(e))
 
 
 # ---------------------------------------------------------------------------

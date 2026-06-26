@@ -149,7 +149,18 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.installer_version }}
-        run: python scripts/set_version.py "$RELEASE_VERSION"
+        run: |
+          set -euo pipefail
+          if command -v py >/dev/null 2>&1; then
+            py -3 scripts/set_version.py "$RELEASE_VERSION"
+          elif command -v python3 >/dev/null 2>&1; then
+            python3 scripts/set_version.py "$RELEASE_VERSION"
+          elif command -v python >/dev/null 2>&1; then
+            python scripts/set_version.py "$RELEASE_VERSION"
+          else
+            echo "::error::No Python launcher found (tried: py, python3, python)"
+            exit 1
+          fi
 
       - name: Build bootstrap installer
         run: npm run tauri:build

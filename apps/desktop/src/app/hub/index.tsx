@@ -32,6 +32,7 @@ interface LiteLLMSkill {
   description?: string
   source?: string
   installed?: boolean
+  installedName?: string
 }
 
 function filteredAgents(agents: LiteLLMAgent[], query: string): LiteLLMAgent[] {
@@ -130,6 +131,7 @@ export function HubView({ ...props }: HubViewProps) {
             description: s.description ? String(s.description) : undefined,
             source: sourceStr,
             installed: Boolean(s.installed),
+            installedName: s.installed_name ? String(s.installed_name) : undefined,
           }
         })
         setSkills(skillsList)
@@ -180,10 +182,34 @@ export function HubView({ ...props }: HubViewProps) {
       } else {
         setInstallProgress(`✗ Installation failed: ${result?.message || 'Unknown error'}`)
       }
+
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setInstallProgress(`✗ Error: ${message}`)
       notifyError(err, `Failed to install ${skill.name}`)
+    }
+  }
+
+  const handleUninstallSkill = async (skill: LiteLLMSkill) => {
+    const uninstallName = (skill.installedName || skill.name || skill.id).trim()
+    try {
+      await requestGateway<{ success: boolean; message: string }>('litellm_hub.skill_uninstall', {
+        skill_name: uninstallName,
+      })
+      setInstalledSkillIds(prev => {
+        const next = new Set(prev)
+        next.delete(skill.id)
+        return next
+      })
+      setSkills(prev =>
+        prev?.map(s =>
+          s.id === skill.id
+            ? { ...s, installed: false, installedName: undefined }
+            : s
+        ) || prev
+      )
+    } catch (err) {
+      notifyError(err, `Failed to uninstall ${uninstallName}`)
     }
   }
 
@@ -268,7 +294,13 @@ export function HubView({ ...props }: HubViewProps) {
             onToggle={handleToggleAgent}
           />
         ) : (
-        <SkillsList skills={filteredSkillsList || []} query={query} onInstall={handleInstallSkill} installedIds={installedSkillIds} />
+        <SkillsList
+          skills={filteredSkillsList || []}
+          query={query}
+          onInstall={handleInstallSkill}
+          onUninstall={handleUninstallSkill}
+          installedIds={installedSkillIds}
+        />
         )}
 
         {/* Raw server response — hidden until further development
@@ -375,10 +407,11 @@ interface SkillsListProps {
   skills: LiteLLMSkill[]
   query: string
   onInstall?: (skill: LiteLLMSkill) => void
+  onUninstall?: (skill: LiteLLMSkill) => void
   installedIds?: Set<string>
 }
 
-function SkillsList({ skills, query, onInstall, installedIds }: SkillsListProps) {
+function SkillsList({ skills, query, onInstall, onUninstall, installedIds }: SkillsListProps) {
   return (
     <div className="overflow-y-auto flex-1">
       {skills.length === 0 ? (
@@ -408,18 +441,30 @@ function SkillsList({ skills, query, onInstall, installedIds }: SkillsListProps)
                   )}
                 </div>
                 {onInstall && (
-                  <button
-                    onClick={() => !installedIds?.has(skill.id) && onInstall(skill)}
-                    disabled={installedIds?.has(skill.id)}
-                    className={cn(
-                      'ml-2 px-2.5 py-1 text-xs font-medium rounded transition-colors flex-shrink-0',
-                      installedIds?.has(skill.id)
-                        ? 'text-green-600 dark:text-green-400 border border-green-500/40 cursor-default'
-                        : 'text-white bg-blue-600 hover:bg-blue-700'
+                  <div className="ml-2 flex-shrink-0 flex flex-col items-end gap-1">
+                    {installedIds?.has(skill.id) ? (
+                      <>
+                        <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400 border-green-500/40">
+                          ✓ Installed
+                        </Badge>
+                        {onUninstall && (
+                          <button
+                            onClick={() => onUninstall(skill)}
+                            className="px-2.5 py-1 text-xs font-medium rounded transition-colors border border-red-400/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            Uninstall
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => onInstall(skill)}
+                        className="px-2.5 py-1 text-xs font-medium rounded transition-colors text-white bg-blue-600 hover:bg-blue-700"
+                      >
+                        Install
+                      </button>
                     )}
-                  >
-                    {installedIds?.has(skill.id) ? '✓ Installed' : 'Install'}
-                  </button>
+                  </div>
                 )}
               </div>
             </div>
