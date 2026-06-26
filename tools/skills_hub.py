@@ -4108,6 +4108,83 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
     return sources
 
 
+def find_skill_md_in_repo(
+    owner: str,
+    repo: str,
+    skill_id_hint: str = "",
+    *,
+    auth: Optional["GitHubAuth"] = None,
+) -> Optional[Tuple[str, str]]:
+    """Find a SKILL.md file in a GitHub repo using the tree API.
+
+    Returns ``(raw_url, path_in_repo)`` of the best match, or ``None``.
+    Uses the tree API so it works for any nesting depth.
+
+    ``skill_id_hint`` is a fuzzy hint (skill_id or name) used to rank
+    candidates when multiple SKILL.md files exist in the repo.
+    """
+    if auth is None:
+        auth = GitHubAuth()
+    headers = auth.get_headers()
+
+    # Resolve default branch
+    try:
+        r = httpx.get(
+            f"https://api.github.com/repos/{owner}/{repo}",
+            headers=headers, timeout=15, follow_redirects=True,
+        )
+        if r.status_code != 200:
+            logger.warning("find_skill_md_in_repo: repo fetch HTTP %d for %s/%s", r.status_code, owner, repo)
+            return None
+        default_branch = r.json().get("default_branch", "main")
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("find_skill_md_in_repo: repo fetch failed for %s/%s: %s", owner, repo, exc)
+        return None
+
+    # Fetch full recursive tree
+    try:
+        r = httpx.get(
+            f"https://api.github.com/repos/{owner}/{repo}/git/trees/{default_branch}",
+            params={"recursive": "1"},
+            headers=headers, timeout=30, follow_redirects=True,
+        )
+        if r.status_code != 200:
+            logger.warning("find_skill_md_in_repo: tree fetch HTTP %d for %s/%s", r.status_code, owner, repo)
+            return None
+        entries = r.json().get("tree", [])
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("find_skill_md_in_repo: tree fetch failed for %s/%s: %s", owner, repo, exc)
+        return None
+
+    # Collect all SKILL.md blob paths
+    skill_paths = [
+        e["path"] for e in entries
+        if e.get("type") == "blob" and e.get("path", "").endswith("/SKILL.md")
+    ]
+    logger.info(
+        "find_skill_md_in_repo: %s/%s@%s — found %d SKILL.md file(s): %s",
+        owner, repo, default_branch, len(skill_paths), skill_paths,
+    )
+
+    if not skill_paths:
+        return None
+
+    # Score candidates against hint (lower = better match)
+    hint_norm = skill_id_hint.strip("/").lower()
+
+    def _score(path: str) -> int:
+        skill_dir = "/".join(path.split("/")[:-1]).lower()
+        if hint_norm and hint_norm in skill_dir:
+            return 0
+        # Prefer shallower paths (fewer slashes)
+        return path.count("/")
+
+    best = min(skill_paths, key=_score)
+    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{best}"
+    logger.info("find_skill_md_in_repo: best match → %s (raw: %s)", best, raw_url)
+    return raw_url, best
+
+
 def _search_one_source(
     src: SkillSource, query: str, limit: int
 ) -> Tuple[str, List[SkillMeta]]:

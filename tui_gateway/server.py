@@ -9891,6 +9891,8 @@ def _(rid, params: dict) -> dict:
         skill_name = (params.get("skill_name") or "").strip()
         source = params.get("source", "")
 
+        logger.info("[LiteLLM Hub] skill_install: skill_id=%r skill_name=%r source=%r", skill_id, skill_name, source)
+
         if not skill_id or not skill_name or not source:
             return _err(rid, 5032, "skill_id, skill_name, and source are required")
         if not isinstance(source, str):
@@ -9923,6 +9925,7 @@ def _(rid, params: dict) -> dict:
         owner, repo = repo_info.split("/", 1) if "/" in repo_info else ("", "")
         owner = owner.strip()
         repo = repo.strip().replace(".git", "")
+        logger.info("[LiteLLM Hub] skill_install: repo_info=%r owner=%r repo=%r", repo_info, owner, repo)
         if not owner or not repo:
             return _err(rid, 5034, f"Invalid GitHub repo format: {source_raw}")
 
@@ -9931,6 +9934,7 @@ def _(rid, params: dict) -> dict:
         skill_path_no_prefix = (
             skill_path[len("skills/") :] if skill_path.startswith("skills/") else skill_path
         )
+        logger.info("[LiteLLM Hub] skill_install: skill_path=%r skill_path_no_prefix=%r", skill_path, skill_path_no_prefix)
 
         url_candidates = [
             f"https://raw.githubusercontent.com/{owner}/{repo}/main/skills/{skill_path_no_prefix}/SKILL.md",
@@ -9938,37 +9942,64 @@ def _(rid, params: dict) -> dict:
             f"https://raw.githubusercontent.com/{owner}/{repo}/main/{skill_path_no_prefix}/SKILL.md",
             f"https://raw.githubusercontent.com/{owner}/{repo}/master/{skill_path_no_prefix}/SKILL.md",
         ]
+        logger.info("[LiteLLM Hub] skill_install: trying %d URL candidates:\n  %s", len(url_candidates), "\n  ".join(url_candidates))
 
         try:
-            last_status = None
-            skill_md_url = ""
-            resp = None
-            for candidate in url_candidates:
-                skill_md_url = candidate
+            # First try tree-based discovery — finds SKILL.md at any depth
+            from tools.skills_hub import find_skill_md_in_repo
+            tree_result = find_skill_md_in_repo(owner, repo, skill_id_hint=skill_path_no_prefix)
+            if tree_result:
+                skill_md_url, found_path = tree_result
+                logger.info("[LiteLLM Hub] skill_install: tree discovery found %s → %s", found_path, skill_md_url)
                 resp = requests.get(skill_md_url, timeout=30)
-                last_status = resp.status_code
-                if resp.status_code == 200:
-                    break
-                if resp.status_code not in (404, 301, 302):
+                logger.info("[LiteLLM Hub] skill_install: GET %s → HTTP %d", skill_md_url, resp.status_code)
+                if resp.status_code != 200:
+                    logger.warning("[LiteLLM Hub] skill_install: tree URL returned HTTP %d, falling back to candidates", resp.status_code)
+                    tree_result = None
+
+            if not tree_result:
+                # Fallback: try hard-coded path patterns
+                logger.info("[LiteLLM Hub] skill_install: tree discovery failed, trying %d fallback candidates", len(url_candidates))
+                last_status = None
+                skill_md_url = ""
+                resp = None
+                for candidate in url_candidates:
+                    skill_md_url = candidate
+                    resp = requests.get(skill_md_url, timeout=30)
+                    last_status = resp.status_code
+                    logger.info("[LiteLLM Hub] skill_install: GET %s → HTTP %d", candidate, last_status)
+                    if resp.status_code == 200:
+                        break
+                    if resp.status_code not in (404, 301, 302):
+                        return _err(
+                            rid,
+                            5036,
+                            f"Failed to fetch skill (HTTP {resp.status_code}) from {skill_md_url}",
+                        )
+
+                if resp is None or resp.status_code != 200:
+                    logger.warning("[LiteLLM Hub] skill_install: all candidates failed (last HTTP %s)", last_status)
                     return _err(
                         rid,
-                        5036,
-                        f"Failed to fetch skill (HTTP {resp.status_code}) from {skill_md_url}",
+                        5035,
+                        f"Skill not found. Tried tree discovery + {len(url_candidates)} fallback URLs (last HTTP {last_status})",
                     )
+                found_path = skill_path_no_prefix
 
-            if resp is None or resp.status_code != 200:
-                return _err(
-                    rid,
-                    5035,
-                    f"Skill not found. Tried: {', '.join(url_candidates)} (last HTTP {last_status})",
-                )
+            # Install: derive local dir from the actual discovered path, not the hint
+            # e.g. found_path = "skills/caveman/SKILL.md" → install as "caveman"
+            path_parts = found_path.rstrip("/").replace("/SKILL.md", "").split("/")
+            # Strip leading "skills/" prefix if present
+            if path_parts and path_parts[0].lower() == "skills":
+                path_parts = path_parts[1:]
+            install_rel = "/".join(path_parts) if path_parts else skill_path_no_prefix
 
-            skill_install_dir = skills_dir / skill_path_no_prefix
+            skill_install_dir = skills_dir / install_rel
             skill_install_dir.mkdir(parents=True, exist_ok=True)
             skill_md_path = skill_install_dir / "SKILL.md"
             skill_md_path.write_text(resp.text, encoding="utf-8")
 
-            logging.getLogger(__name__).info(
+            logger.info(
                 "[LiteLLM Hub] Installed %s from %s to %s",
                 skill_name,
                 skill_md_url,
