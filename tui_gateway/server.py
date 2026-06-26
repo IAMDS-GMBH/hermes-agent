@@ -9925,9 +9925,12 @@ def _(rid, params: dict) -> dict:
     """Install a skill from LiteLLM hub by fetching from GitHub."""
     try:
         import requests
+        import re
+        from collections import deque
         from urllib.parse import urlparse
 
         from hermes_constants import get_hermes_home
+        from agent.skill_utils import parse_frontmatter
 
         skill_id = (params.get("skill_id") or "").strip()
         skill_name = (params.get("skill_name") or "").strip()
@@ -9970,6 +9973,73 @@ def _(rid, params: dict) -> dict:
         logger.info("[LiteLLM Hub] skill_install: repo_info=%r owner=%r repo=%r", repo_info, owner, repo)
         if not owner or not repo:
             return _err(rid, 5034, f"Invalid GitHub repo format: {source_raw}")
+
+        def _norm_skill_token(value: str) -> str:
+            return value.strip().strip("`\"'.,:;!?()[]{}").lower().replace("_", "-")
+
+        def _extract_skill_refs(markdown: str, *, current_name: str, available: set[str]) -> set[str]:
+            refs: set[str] = set()
+            fm, body = parse_frontmatter(markdown or "")
+            candidates: list[str] = []
+            for key in ("related_skills", "dependencies", "depends_on", "requires", "skills", "subskills"):
+                raw = fm.get(key)
+                if isinstance(raw, str):
+                    candidates.extend(re.split(r"[\s,]+", raw))
+                elif isinstance(raw, list):
+                    candidates.extend(str(v) for v in raw if v)
+            for m in re.finditer(r"(?<![A-Za-z0-9_])/([A-Za-z][A-Za-z0-9_-]{1,63})", body):
+                candidates.append(m.group(1))
+            current = _norm_skill_token(current_name)
+            for c in candidates:
+                token = _norm_skill_token(str(c))
+                if not token or token == current:
+                    continue
+                if token in available:
+                    refs.add(token)
+            return refs
+
+        def _repo_skill_index() -> tuple[str, dict[str, str]]:
+            headers = {}
+            try:
+                from tools.skills_hub import GitHubAuth
+                headers = GitHubAuth().get_headers()
+            except Exception:
+                headers = {}
+            repo_resp = requests.get(f"https://api.github.com/repos/{owner}/{repo}", headers=headers, timeout=20)
+            if repo_resp.status_code != 200:
+                return "main", {}
+            default_branch = str(repo_resp.json().get("default_branch", "main"))
+            tree_resp = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/git/trees/{default_branch}",
+                params={"recursive": "1"},
+                headers=headers,
+                timeout=30,
+            )
+            if tree_resp.status_code != 200:
+                return default_branch, {}
+            entries = tree_resp.json().get("tree", [])
+            deprecated_markers = {"deprecated", ".deprecated", "_deprecated", "archive", ".archive"}
+            by_name: dict[str, str] = {}
+            for e in entries:
+                path = str(e.get("path") or "")
+                if e.get("type") != "blob" or not path.endswith("/SKILL.md"):
+                    continue
+                parts_lower = {p.lower() for p in path.split("/")}
+                if parts_lower & deprecated_markers:
+                    continue
+                rel = path[:-len("/SKILL.md")]
+                rel_parts = rel.split("/")
+                if rel_parts and rel_parts[0].lower() == "skills":
+                    rel_parts = rel_parts[1:]
+                if not rel_parts:
+                    continue
+                skill_name_norm = _norm_skill_token(rel_parts[-1])
+                if not skill_name_norm:
+                    continue
+                existing = by_name.get(skill_name_norm)
+                if existing is None or len(path) < len(existing):
+                    by_name[skill_name_norm] = path
+            return default_branch, by_name
 
         skills_dir = get_hermes_home() / "skills"
         skill_path = skill_id.strip("/")
@@ -10038,10 +10108,11 @@ def _(rid, params: dict) -> dict:
             if path_parts and path_parts[0].lower() == "skills":
                 path_parts = path_parts[1:]
             install_name = path_parts[-1] if path_parts else (skill_name or skill_path_no_prefix)
+            install_name_norm = _norm_skill_token(install_name) or install_name
 
             # Always install under the "from_skill_hub" category so these show
             # up grouped as "From Skill Hub" in the Skills & Tools window.
-            skill_install_dir = HUB_SKILLS_DIR / "from_skill_hub" / install_name
+            skill_install_dir = HUB_SKILLS_DIR / "from_skill_hub" / install_name_norm
             skill_install_dir.mkdir(parents=True, exist_ok=True)
             skill_md_path = skill_install_dir / "SKILL.md"
             skill_md_path.write_text(resp.text, encoding="utf-8")
@@ -10049,11 +10120,12 @@ def _(rid, params: dict) -> dict:
             # Record in hub lock file so the UI can mark the skill as installed.
             import hashlib
             content_hash = hashlib.sha256(resp.text.encode()).hexdigest()
-            hub_identifier = f"litellm_hub:{owner}/{repo}/{install_name}"
+            hub_identifier = f"litellm_hub:{owner}/{repo}/{install_name_norm}"
+            lock = None
             try:
                 lock = HubLockFile()
                 lock.record_install(
-                    name=install_name,
+                    name=install_name_norm,
                     source=f"github:{owner}/{repo}",
                     identifier=hub_identifier,
                     trust_level="community",
@@ -10068,9 +10140,95 @@ def _(rid, params: dict) -> dict:
                         "found_path": found_path,
                     },
                 )
-                logger.info("[LiteLLM Hub] Recorded install in lock file: %s → %s", install_name, hub_identifier)
+                logger.info("[LiteLLM Hub] Recorded install in lock file: %s → %s", install_name_norm, hub_identifier)
             except Exception as lock_err:
-                logger.warning("[LiteLLM Hub] Failed to record lock entry for %s: %s", install_name, lock_err)
+                logger.warning("[LiteLLM Hub] Failed to record lock entry for %s: %s", install_name_norm, lock_err)
+
+            # Resolve in-repo sibling skill references recursively and install them
+            # into hidden .hub directory so they are available for future use but
+            # do not appear in the "From Skill Hub" listing.
+            hidden_installed: list[str] = []
+            hidden_failed: list[str] = []
+            try:
+                default_branch, repo_skills = _repo_skill_index()
+                available_names = set(repo_skills.keys())
+                queue = deque(
+                    sorted(
+                        _extract_skill_refs(
+                            resp.text,
+                            current_name=install_name_norm,
+                            available=available_names,
+                        )
+                    )
+                )
+                visited = {install_name_norm}
+                hidden_root = HUB_SKILLS_DIR / "from_skill_hub" / ".hub" / "deps"
+                while queue:
+                    dep_name = queue.popleft()
+                    if dep_name in visited:
+                        continue
+                    visited.add(dep_name)
+                    dep_path = repo_skills.get(dep_name)
+                    if not dep_path:
+                        continue
+                    if lock:
+                        try:
+                            if lock.get_installed(dep_name):
+                                continue
+                        except Exception:
+                            pass
+                    dep_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{dep_path}"
+                    dep_resp = requests.get(dep_url, timeout=30)
+                    logger.info("[LiteLLM Hub] skill_install: dependency GET %s → HTTP %d", dep_url, dep_resp.status_code)
+                    if dep_resp.status_code != 200:
+                        hidden_failed.append(dep_name)
+                        continue
+                    dep_dir = hidden_root / dep_name
+                    dep_dir.mkdir(parents=True, exist_ok=True)
+                    (dep_dir / "SKILL.md").write_text(dep_resp.text, encoding="utf-8")
+                    hidden_installed.append(dep_name)
+
+                    if lock:
+                        try:
+                            already = lock.get_installed(dep_name)
+                            if not already:
+                                dep_hash = hashlib.sha256(dep_resp.text.encode()).hexdigest()
+                                dep_identifier = f"litellm_hub:{owner}/{repo}/{dep_name}"
+                                lock.record_install(
+                                    name=dep_name,
+                                    source=f"github:{owner}/{repo}",
+                                    identifier=dep_identifier,
+                                    trust_level="community",
+                                    scan_verdict="unscanned",
+                                    skill_hash=dep_hash,
+                                    install_path=str(dep_dir.relative_to(HUB_SKILLS_DIR)),
+                                    files=["SKILL.md"],
+                                    metadata={
+                                        "plugin_name": dep_name,
+                                        "skill_id": dep_name,
+                                        "resolved_url": dep_url,
+                                        "found_path": dep_path,
+                                        "hidden_from_listing": True,
+                                        "dependency_of": install_name_norm,
+                                    },
+                                )
+                        except Exception as dep_lock_err:
+                            logger.warning(
+                                "[LiteLLM Hub] Failed to record dependency lock entry for %s: %s",
+                                dep_name,
+                                dep_lock_err,
+                            )
+
+                    child_refs = _extract_skill_refs(
+                        dep_resp.text,
+                        current_name=dep_name,
+                        available=available_names,
+                    )
+                    for child in sorted(child_refs):
+                        if child not in visited:
+                            queue.append(child)
+            except Exception as dep_err:
+                logger.warning("[LiteLLM Hub] Failed to resolve recursive dependencies for %s: %s", install_name_norm, dep_err)
 
             logger.info(
                 "[LiteLLM Hub] Installed %s from %s to %s",
@@ -10084,6 +10242,8 @@ def _(rid, params: dict) -> dict:
                     "resolved_url": skill_md_url,
                     "install_path": str(skill_install_dir),
                     "identifier": hub_identifier,
+                    "dependencies_installed": hidden_installed,
+                    "dependencies_failed": hidden_failed,
                 },
             )
         except requests.RequestException as e:
