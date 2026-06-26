@@ -8043,6 +8043,13 @@ async def search_skills_hub(
     /api/skills/hub/preview, and scans via /api/skills/hub/scan.
     """
     query = (q or "").strip()
+    _log.info(
+        "skills hub search request: query=%r source=%s limit=%d profile=%r",
+        query,
+        source,
+        limit,
+        profile,
+    )
     if not query:
         return {"results": [], "source_counts": {}, "timed_out": [], "installed": {}}
 
@@ -8065,12 +8072,19 @@ async def search_skills_hub(
                 seen[r.identifier] = r
         deduped = list(seen.values())[:capped]
 
-        return {
+        payload = {
             "results": [_skill_meta_to_payload(m) for m in deduped],
             "source_counts": source_counts,
             "timed_out": timed_out,
             "installed": _installed_hub_identifiers(profile),
         }
+        _log.info(
+            "skills hub search result: query=%r returned=%d timed_out=%d",
+            query,
+            len(payload["results"]),
+            len(timed_out),
+        )
+        return payload
 
     try:
         return await asyncio.to_thread(_run)

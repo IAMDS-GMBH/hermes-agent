@@ -1507,8 +1507,10 @@ class LiteLLMSkillHubSource(SkillSource):
         return "community"
 
     def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
+        logger.info("LiteLLM hub: search query=%r limit=%d", query, limit)
         entries = self._load_entries()
         if not entries:
+            logger.warning("LiteLLM hub: no entries returned")
             return []
 
         query_lower = query.strip().lower()
@@ -1530,6 +1532,7 @@ class LiteLLMSkillHubSource(SkillSource):
             results.append(meta)
             if len(results) >= limit:
                 break
+        logger.info("LiteLLM hub: matched %d/%d entries for %r", len(results), len(entries), query)
         return results
 
     def inspect(self, identifier: str) -> Optional[SkillMeta]:
@@ -1623,13 +1626,23 @@ class LiteLLMSkillHubSource(SkillSource):
 
     def _load_entries(self) -> List[Dict[str, Any]]:
         data, _err = fetch_litellm_hub_json("skill_hub", require_auth=False)
+        if _err:
+            logger.warning("LiteLLM hub: fetch error: %s", _err)
         if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
+            out = [item for item in data if isinstance(item, dict)]
+            logger.info("LiteLLM hub: payload=list entries=%d", len(out))
+            return out
         if isinstance(data, dict):
             for key in ("skills", "items", "data", "plugins"):
                 value = data.get(key)
                 if isinstance(value, list):
-                    return [item for item in value if isinstance(item, dict)]
+                    out = [item for item in value if isinstance(item, dict)]
+                    logger.info("LiteLLM hub: payload=dict key=%s entries=%d", key, len(out))
+                    return out
+            logger.warning("LiteLLM hub: payload=dict but no list key (skills/items/data/plugins)")
+            logger.debug("LiteLLM hub: dict keys=%s", sorted(data.keys()))
+            return []
+        logger.warning("LiteLLM hub: unexpected payload type=%s", type(data).__name__)
         return []
 
     def _find_entry(self, identifier: str) -> Optional[Dict[str, Any]]:
@@ -4146,14 +4159,24 @@ def parallel_search_sources(
             continue
         # Skip external API sources when the index covers them
         if _index_available and sid in _api_source_ids:
+            logger.debug("Hub search: skipping source=%s (covered by hermes-index)", sid)
             continue
         active.append(src)
+
+    logger.info(
+        "Hub search: query=%r filter=%s index_available=%s active_sources=%s",
+        query,
+        source_filter,
+        _index_available,
+        [s.source_id() for s in active],
+    )
 
     all_results: List[SkillMeta] = []
     source_counts: Dict[str, int] = {}
     timed_out_ids: List[str] = []
 
     if not active:
+        logger.warning("Hub search: no active sources for query=%r filter=%s", query, source_filter)
         return all_results, source_counts, timed_out_ids
 
     # NOTE: a `with ThreadPoolExecutor(...) as pool` block calls

@@ -186,12 +186,23 @@ jobs:
       - name: Collect Windows artifacts
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          INSTALLER_VERSION: ${{ steps.version.outputs.installer_version }}
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
           $candidates = @(
             "apps/bootstrap-installer/src-tauri/target/release/*.exe",
             "apps/bootstrap-installer/src-tauri/target/release/bundle/*/*.exe"
           )
+
+          $version = $env:INSTALLER_VERSION
+          if (-not $version) {
+            $pkg = Get-Content -LiteralPath "apps/bootstrap-installer/package.json" -Raw | ConvertFrom-Json
+            $version = [string]$pkg.version
+          }
+          if (-not $version) {
+            throw "Could not resolve installer version for Windows artifact naming"
+          }
 
           $files = @()
           foreach ($pattern in $candidates) {
@@ -204,7 +215,14 @@ jobs:
           }
 
           $files | ForEach-Object {
-            Copy-Item -Path $_.FullName -Destination "release-artifacts" -Force
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+            $ext = [System.IO.Path]::GetExtension($_.Name)
+            if ($base -match [regex]::Escape($version)) {
+              $targetName = "$base$ext"
+            } else {
+              $targetName = "$base-$version$ext"
+            }
+            Copy-Item -Path $_.FullName -Destination (Join-Path "release-artifacts" $targetName) -Force
           }
 
       - name: Upload build artifacts
