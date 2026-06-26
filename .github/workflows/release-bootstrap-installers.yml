@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build-installers:
@@ -29,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, self-hosted-windows]
 
     steps:
       - name: Checkout
@@ -151,6 +152,29 @@ jobs:
           HERMES_BUILD_PIN_COMMIT: ${{ github.sha }}
           HERMES_BUILD_PIN_BRANCH: ${{ github.ref_name }}
 
+      - name: Azure login (OIDC)
+        if: runner.os == 'Windows'
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows installer with Azure Artifact Signing
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERTIFICATE_PROFILE }}
+          # Sign both raw exe and bundled NSIS installer.
+          files-folder: ${{ github.workspace }}\apps\bootstrap-installer\src-tauri\target\release
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Collect macOS artifacts
         if: runner.os == 'macOS'
         shell: bash
@@ -216,12 +240,12 @@ jobs:
             echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
             exit 0
           fi
- 
+
           if [ -z "${INPUT_VERSION:-}" ]; then
             echo "::error::workflow_dispatch release creation requires input 'version' (e.g. 0.1.0 or v0.1.0)"
             exit 1
           fi
- 
+
           clean="${INPUT_VERSION#v}"
           if [[ ! "$clean" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Invalid version '${INPUT_VERSION}'. Use SemVer like 0.1.0 or v0.1.0"
