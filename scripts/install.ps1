@@ -1465,7 +1465,22 @@ function Install-Dependencies {
     Write-Info "Installing dependencies..."
     
     Push-Location $InstallDir
-    
+
+    # Sync version from git tag into pyproject.toml + hermes_cli/__init__.py
+    # before the package is installed so importlib.metadata returns the correct
+    # release tag at runtime.
+    try {
+        # Shallow clones don't fetch tags — fetch the nearest tag explicitly.
+        & git -C $InstallDir fetch --tags --depth=1 origin 2>$null
+        $gitTag = & git -C $InstallDir describe --tags --abbrev=0 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitTag) {
+            $pyExe = Join-Path $InstallDir "venv\Scripts\python.exe"
+            if (-not (Test-Path $pyExe)) { $pyExe = $PythonPath }
+            Write-Info "Syncing version from git tag $gitTag ..."
+            & $pyExe (Join-Path $InstallDir "scripts\set_version.py") $gitTag 2>$null
+        }
+    } catch {}
+
     if (-not $NoVenv) {
         # Tell uv to install into our venv (no activation needed)
         $env:VIRTUAL_ENV = "$InstallDir\venv"

@@ -1246,6 +1246,22 @@ setup_venv() {
 install_deps() {
     log_info "Installing dependencies..."
 
+    # Sync version from git tag into pyproject.toml + hermes_cli/__init__.py
+    # before the package is installed so `importlib.metadata.version("hermes-agent")`
+    # returns the correct release tag at runtime.
+    if command -v git >/dev/null 2>&1 && git -C "$INSTALL_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+        # Shallow clones don't fetch tags — fetch the nearest tag explicitly.
+        git -C "$INSTALL_DIR" fetch --tags --depth=1 origin 2>/dev/null || true
+        local _git_tag
+        _git_tag=$(git -C "$INSTALL_DIR" describe --tags --abbrev=0 2>/dev/null || true)
+        if [ -n "$_git_tag" ]; then
+            local _py="${INSTALL_DIR}/venv/bin/python"
+            if [ ! -x "$_py" ]; then _py="$PYTHON_PATH"; fi
+            log_info "Syncing version from git tag $_git_tag ..."
+            "$_py" "$INSTALL_DIR/scripts/set_version.py" "$_git_tag" 2>/dev/null || true
+        fi
+    fi
+
     # Re-pin UV_PYTHON to the venv interpreter. setup_venv already does this,
     # but the bootstrap runs install stages (`venv`, `python-deps`) as separate
     # processes, so an export from setup_venv does NOT survive into a separate
