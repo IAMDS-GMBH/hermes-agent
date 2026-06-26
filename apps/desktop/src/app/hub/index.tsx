@@ -31,6 +31,7 @@ interface LiteLLMSkill {
   name: string
   description?: string
   source?: string
+  installed?: boolean
 }
 
 function filteredAgents(agents: LiteLLMAgent[], query: string): LiteLLMAgent[] {
@@ -127,10 +128,12 @@ export function HubView({ ...props }: HubViewProps) {
             id: String(s.id || s.name || ''),
             name: String(s.name || ''),
             description: s.description ? String(s.description) : undefined,
-            source: sourceStr
+            source: sourceStr,
+            installed: Boolean(s.installed),
           }
         })
         setSkills(skillsList)
+        setInstalledSkillIds(new Set(skillsList.filter(s => s.installed).map(s => s.id)))
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -460,4 +463,3 @@ function SkillInstallModal({ skill, progress, onClose }: SkillInstallModalProps)
     </div>
   )
 }
-

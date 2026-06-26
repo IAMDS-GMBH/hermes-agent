@@ -9855,6 +9855,7 @@ def _(rid, params: dict) -> dict:
     """Fetch LiteLLM Skill Hub entries."""
     try:
         from agent.litellm_hub_client import fetch_litellm_hub_json, resolve_litellm_hub_settings
+        from tools.skills_hub import HubLockFile
 
         settings = resolve_litellm_hub_settings()
         base_url = settings.get('base_url', '(not set)').rstrip('/')
@@ -9868,7 +9869,48 @@ def _(rid, params: dict) -> dict:
             logger.warning("[LiteLLM Hub] skills fetch failed: %s", error)
             return _err(rid, 5028, f"{error} (resolved URL: {resolved_url})")
 
-        skills = data if isinstance(data, list) else (data.get("skills", []) or data.get("plugins", []) if data else [])
+        raw_skills = data if isinstance(data, list) else (data.get("skills", []) or data.get("plugins", []) if data else [])
+        installed_skill_ids = set()
+        installed_skill_names = set()
+        installed_identifiers = set()
+        try:
+            for entry in HubLockFile().list_installed():
+                identifier = str(entry.get("identifier") or "").strip()
+                if identifier.startswith("litellm_hub:"):
+                    installed_identifiers.add(identifier)
+                name = str(entry.get("name") or "").strip().lower()
+                if name:
+                    installed_skill_names.add(name)
+                metadata = entry.get("metadata") or {}
+                skill_id = str(metadata.get("skill_id") or "").strip().lower()
+                if skill_id:
+                    installed_skill_ids.add(skill_id)
+                plugin_name = str(metadata.get("plugin_name") or "").strip().lower()
+                if plugin_name:
+                    installed_skill_names.add(plugin_name)
+        except Exception:
+            pass
+
+        skills = []
+        for skill in raw_skills:
+            if not isinstance(skill, dict):
+                skills.append(skill)
+                continue
+            item = dict(skill)
+            sid = str(item.get("id") or "").strip().lower()
+            sname = str(item.get("name") or "").strip().lower()
+            installed = (sid and sid in installed_skill_ids) or (sname and sname in installed_skill_names)
+            if not installed:
+                source = item.get("source")
+                if isinstance(source, dict):
+                    repo = str(source.get("repo") or "").strip()
+                    if repo:
+                        if sid and f"litellm_hub:{repo}/{sid}" in installed_identifiers:
+                            installed = True
+                        elif sname and f"litellm_hub:{repo}/{sname}" in installed_identifiers:
+                            installed = True
+            item["installed"] = bool(installed)
+            skills.append(item)
         logger.info("[LiteLLM Hub] skills fetch OK: data_type=%s skills_count=%d", type(data).__name__, len(skills))
         if isinstance(data, dict):
             logger.info("[LiteLLM Hub] response keys: %s", sorted(data.keys()))
