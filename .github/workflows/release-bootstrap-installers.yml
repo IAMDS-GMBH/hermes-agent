@@ -144,6 +144,13 @@ jobs:
         with:
           workspaces: apps/bootstrap-installer/src-tauri
 
+      - name: Sync Python package version from release tag
+        if: steps.version.outputs.installer_version != ''
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.installer_version }}
+        run: python scripts/set_version.py "$RELEASE_VERSION"
+
       - name: Build bootstrap installer
         run: npm run tauri:build
         working-directory: apps/bootstrap-installer
@@ -176,16 +183,18 @@ jobs:
           }
 
       - name: Azure login (OIDC)
+        id: azure_login
         if: runner.os == 'Windows'
+        continue-on-error: true
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          # subscription-id omitted: signing role is on the signing account resource,
-          # not on a subscription — the SP has no subscription-level role assignment.
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installer with Azure Artifact Signing
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.azure_login.outcome == 'success'
+        continue-on-error: true
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
@@ -198,6 +207,11 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
+
+      - name: Warn if Windows installer is unsigned
+        if: runner.os == 'Windows' && steps.azure_login.outcome != 'success'
+        shell: bash
+        run: echo "::warning::Azure login failed — Windows installer will be released unsigned."
 
       - name: Collect macOS artifacts
         if: runner.os == 'macOS'

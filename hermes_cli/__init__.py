@@ -14,8 +14,18 @@ Provides subcommands for:
 import os
 import sys
 
-__version__ = "0.16.0"
-__release_date__ = "2026.6.5"
+__version__: str
+__release_date__: str
+
+try:
+    from importlib.metadata import metadata as _pkg_metadata, PackageNotFoundError as _PNF
+    _meta = _pkg_metadata("hermes-agent")
+    __version__ = _meta["Version"] or "0.0.0"
+    __release_date__ = _meta.get("X-Release-Date") or "unknown"
+except Exception:
+    # Fallback for editable installs or environments where metadata isn't available.
+    __version__ = "0.16.0"
+    __release_date__ = "2026.6.26"
 
 
 def _ensure_utf8():
