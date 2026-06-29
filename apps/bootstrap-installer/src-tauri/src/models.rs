@@ -17,7 +17,7 @@ pub struct ModelsResponse {
 }
 
 /// Provider model cache entry (matches hermes-agent's structure).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCacheEntry {
     pub fp: String,       // "pinned" or timestamp
     pub at: f64,          // timestamp
@@ -71,11 +71,13 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
     Ok(models)
 }
 
-/// Write provider_models_cache.json with ONLY the fetched models for openai-api.
+/// Write provider_models_cache.json with fetched LiteLLM models pinned for OpenAI slugs.
 ///
-/// Creates `~/.hermes/provider_models_cache.json` with a single openai-api entry
-/// containing all fetched models. Explicitly excludes other providers (copilot, etc.)
-/// to ensure hermes-agent only shows the models from the user's configured LLM endpoint.
+/// Updates `~/.hermes/provider_models_cache.json` while preserving unrelated
+/// provider cache entries (so reinstall does not wipe prior discovery state).
+/// The installer pins both `openai-api` and `openai` to the fetched list and
+/// removes Copilot cache entries to keep the picker aligned with the bootstrap
+/// LiteLLM endpoint.
 #[tauri::command]
 pub async fn write_provider_models_cache(
     hermes_home: Option<String>,
@@ -96,19 +98,43 @@ pub async fn write_provider_models_cache(
 
     let cache_file = hermes_home_path.join("provider_models_cache.json");
 
-    // Create the cache structure: ONLY openai-api provider with all models
-    // Explicitly exclude other providers like copilot to prevent them from being fetched
-    let mut providers = std::collections::HashMap::new();
+    // Load existing cache so reinstall/update keeps previously discovered
+    // provider entries instead of blowing them away.
+    let mut providers: std::collections::HashMap<String, ProviderCacheEntry> = if cache_file.exists()
+    {
+        match std::fs::read_to_string(&cache_file) {
+            Ok(raw) => serde_json::from_str::<ProviderModelsCache>(&raw)
+                .map(|c| c.providers)
+                .unwrap_or_default(),
+            Err(_) => std::collections::HashMap::new(),
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Keep the bootstrap UX opinionated: no Copilot catalog in this path.
+    providers.remove("copilot");
+    providers.remove("copilot-acp");
+
+    let pinned_entry = ProviderCacheEntry {
+        fp: "pinned".to_string(),
+        at: 9999999999.0, // Far future timestamp to indicate this is pinned
+        models: model_names,
+    };
+
     providers.insert(
         "openai-api".to_string(),
-        ProviderCacheEntry {
-            fp: "pinned".to_string(),
-            at: 9999999999.0, // Far future timestamp to indicate this is pinned
-            models: model_names,
-        },
+        pinned_entry.clone(),
+    );
+    providers.insert(
+        "openai".to_string(),
+        pinned_entry,
     );
 
-    let model_count = providers["openai-api"].models.len();
+    let model_count = providers
+        .get("openai-api")
+        .map(|entry| entry.models.len())
+        .unwrap_or(0);
     let cache = ProviderModelsCache { providers };
 
     // Write cache file (overwrites any existing cache to ensure clean state)
@@ -119,7 +145,7 @@ pub async fn write_provider_models_cache(
         .map_err(|e| format!("Failed to write cache file: {}", e))?;
 
     tracing::info!(
-        "Wrote provider models cache to: {} (openai-api only, {} models)",
+        "Wrote provider models cache to: {} (pinned openai/openai-api, {} models)",
         cache_file.display(),
         model_count
     );
