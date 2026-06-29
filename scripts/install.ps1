@@ -2311,195 +2311,29 @@ OPENAI_API_KEY=$bootstrapApiKey
         Write-Info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in $envPath"
     }
 
-    # Patch hermes-agent: pin openai-api to fetched model list, suppress copilot
-    if (-not [string]::IsNullOrWhiteSpace($env:HERMES_BOOTSTRAP_MODEL)) {
-        $modelsPy = "$InstallDir\hermes_cli\models.py"
-        $switchPy = "$InstallDir\hermes_cli\model_switch.py"
-        $pythonCmd = "python"
-        $venvPython = "$InstallDir\venv\Scripts\python.exe"
-        if (Test-Path $venvPython) {
-            $pythonCmd = $venvPython
+    # Never patch core Python sources from installer credentials anymore.
+    # Previous bootstrap revisions injected custom blocks into models.py /
+    # model_switch.py which pinned stale model lists and broke live LiteLLM
+    # discovery on reinstalls. If we detect those legacy injected markers,
+    # restore the canonical files from git.
+    if ((Test-Path "$InstallDir\.git") -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $legacyPatchDetected = $false
+        if (Test-Path "$InstallDir\hermes_cli\models.py") {
+            $legacyPatchDetected = $legacyPatchDetected -or (
+                Select-String -Path "$InstallDir\hermes_cli\models.py" -Pattern "Custom: pin openai-api to fetched models" -Quiet
+            )
         }
-
-        # Patch models.py
-        # Write the Python script to a temp file to avoid PS5.1 command-line
-        # argument quoting bugs that silently corrupt complex multiline -c scripts.
-        # This mirrors the macOS approach which uses a stdin heredoc (python3 - <<'PYEOF').
-        if (Test-Path $modelsPy) {
-            $pythonScript = @"
-import json, os, re, sys
-path, model = sys.argv[1], sys.argv[2]
-models_json = os.environ.get("HERMES_BOOTSTRAP_MODELS_JSON", "[]")
-try:
-    models = [m for m in json.loads(models_json) if isinstance(m, str) and m.strip()]
-except Exception:
-    models = []
-if not models:
-    models = [model]
-models_literal = repr(models)
-src = open(path, encoding="utf-8").read()
-
-# Patch cached_provider_model_ids: insert short-circuit after 'if not normalized'
-old = 'normalized = normalize_provider(provider) or (provider or "")\n    if not normalized:\n        return []'
-pin_block = (
-    '\n\n'
-    '    # Custom: pin openai-api to fetched models; suppress copilot entirely.\n'
-    '    if normalized in ("openai", "openai-api"):\n'
-    f'        return {models_literal}\n'
-    '    if normalized == "copilot":\n'
-    '        return []'
-)
-if "# Custom: pin openai-api" in src:
-    src = re.sub(
-        r'(?ms)\n\n    # Custom: pin openai-api to fetched models; suppress copilot entirely\.\n'
-        r'    if normalized in \("openai", "openai-api"\):\n'
-        r'        return .*?\n'
-        r'    if normalized == "copilot":\n'
-        r'        return \[\]',
-        pin_block,
-        src,
-        count=1,
-    )
-else:
-    new = (
-        'normalized = normalize_provider(provider) or (provider or "")\n'
-        '    if not normalized:\n'
-        '        return []\n\n'
-        '    # Custom: pin openai-api to fetched models; suppress copilot entirely.\n'
-        f'    if normalized in ("openai", "openai-api"):\n'
-        f'        return {models_literal}\n'
-        '    if normalized == "copilot":\n'
-        '        return []'
-    )
-    src = src.replace(old, new, 1)
-
-# Patch _save_provider_models_cache: strip copilot and re-pin openai-api on every write
-old_save = (
-    'def _save_provider_models_cache(data: dict) -> None:\n'
-    '    """Persist the cache dict. Best-effort \u2014 silent on any error."""\n'
-    '    try:\n'
-    '        from utils import atomic_json_write\n\n'
-    '        path = _provider_models_cache_path()\n'
-    '        path.parent.mkdir(parents=True, exist_ok=True)\n'
-    '        atomic_json_write(path, data, indent=None)\n'
-    '    except Exception:\n'
-    '        pass'
-)
-new_save = (
-    'def _save_provider_models_cache(data: dict) -> None:\n'
-    '    """Persist the cache dict. Best-effort \u2014 silent on any error."""\n'
-    '    try:\n'
-    '        from utils import atomic_json_write\n\n'
-    '        # Custom: never persist copilot; always pin openai-api.\n'
-    '        filtered = {k: v for k, v in data.items() if k != "copilot"}\n'
-    f'        filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": {models_literal}}}\n\n'
-    '        path = _provider_models_cache_path()\n'
-    '        path.parent.mkdir(parents=True, exist_ok=True)\n'
-    '        atomic_json_write(path, filtered, indent=None)\n'
-    '    except Exception:\n'
-    '        pass'
-)
-if '# Custom: never persist copilot' in src:
-    src = re.sub(
-        r'filtered\["openai-api"\]\s*=\s*\{"fp":\s*"pinned",\s*"at":\s*9999999999\.0,\s*"models":\s*.*?\}',
-        f'filtered["openai-api"] = {{"fp": "pinned", "at": 9999999999.0, "models": {models_literal}}}',
-        src,
-        count=1,
-    )
-else:
-    src = src.replace(old_save, new_save, 1)
-
-# Clear static copilot model list
-src = re.sub(
-    r'"copilot":\s*\[[^\]]*\],',
-    '"copilot": [],  # Custom: suppressed',
-    src,
-    count=1,
-)
-
-# Pin static fallback catalogs too (used by curated/model-picker merge paths)
-src = re.sub(
-    r'(?ms)"openai":\s*\[[^\]]*?\],',
-    f'"openai": {models_literal},',
-    src,
-    count=1,
-)
-src = re.sub(
-    r'(?ms)"openai-api":\s*\[[^\]]*?\],',
-    f'"openai-api": {models_literal},',
-    src,
-    count=1,
-)
-
-open(path, "w", encoding="utf-8").write(src)
-print("models.py patched")
-"@
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            $tempScript = [System.IO.Path]::GetTempFileName() + ".py"
-            try {
-                [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
-                & $pythonCmd $tempScript $modelsPy $env:HERMES_BOOTSTRAP_MODEL
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Success "Patched models.py to pin openai-api and suppress copilot"
-                } else {
-                    Write-Warning "models.py patch exited with code $LASTEXITCODE - model list may not be pinned"
-                }
-            } finally {
-                Remove-Item $tempScript -ErrorAction SilentlyContinue
-            }
+        if (Test-Path "$InstallDir\hermes_cli\model_switch.py") {
+            $legacyPatchDetected = $legacyPatchDetected -or (
+                Select-String -Path "$InstallDir\hermes_cli\model_switch.py" -Pattern "Custom: copilot suppressed" -Quiet
+            )
         }
-
-        # Patch model_switch.py
-        if (Test-Path $switchPy) {
-            $pythonScript = @"
-import sys
-path = sys.argv[1]
-src = open(path, encoding="utf-8").read()
-
-# Override curated copilot to empty right after curated dict is built
-old_curated = 'curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)\n    curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]'
-if '# Custom: copilot suppressed' not in src:
-    new_curated = (
-        'curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)\n'
-        '    curated["copilot"] = []  # Custom: copilot suppressed from picker\n'
-        '    curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]'
-    )
-    src = src.replace(old_curated, new_curated, 1)
-
-# Skip copilot slugs early in the HERMES_OVERLAYS loop
-old_loop = (
-    '        # Resolve Hermes slug \u2014 e.g. "github-copilot" \u2192 "copilot"\n'
-    '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
-    '        if hermes_slug.lower() in seen_slugs:\n'
-    '            continue'
-)
-if '# Custom: suppress copilot' not in src:
-    new_loop = (
-        '        # Resolve Hermes slug \u2014 e.g. "github-copilot" \u2192 "copilot"\n'
-        '        hermes_slug = _mdev_to_hermes.get(pid, pid)\n'
-        '        if hermes_slug.lower() in seen_slugs:\n'
-        '            continue\n\n'
-        '        # Custom: suppress copilot from picker entirely\n'
-        '        if hermes_slug in {"copilot", "copilot-acp", "github-copilot"}:\n'
-        '            continue'
-    )
-    src = src.replace(old_loop, new_loop, 1)
-
-open(path, "w", encoding="utf-8").write(src)
-print("model_switch.py patched")
-"@
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            $tempScript = [System.IO.Path]::GetTempFileName() + ".py"
-            try {
-                [System.IO.File]::WriteAllText($tempScript, $pythonScript, $utf8NoBom)
-                & $pythonCmd $tempScript $switchPy
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Success "Patched model_switch.py to suppress copilot from picker"
-                } else {
-                    Write-Warning "model_switch.py patch exited with code $LASTEXITCODE - copilot suppression may not be active"
-                }
-            } finally {
-                Remove-Item $tempScript -ErrorAction SilentlyContinue
+        if ($legacyPatchDetected) {
+            & git -C $InstallDir checkout -- hermes_cli/models.py hermes_cli/model_switch.py 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Restored canonical model discovery files (removed legacy bootstrap patches)"
+            } else {
+                Write-Warning "Detected legacy bootstrap model patches but could not restore canonical files from git"
             }
         }
     }
