@@ -10397,6 +10397,9 @@ def _(rid, params: dict) -> dict:
             sync_callback(verification_uri, user_code, expires_in)
 
         provider = GraphDeviceCodeProvider(creds, device_code_callback=async_callback)
+        # Explicit "start auth" should always mint a fresh user/device code.
+        # Otherwise an existing refresh token can bypass callback emission.
+        provider.clear_cache()
 
         def run_auth_flow():
             loop = asyncio.new_event_loop()
@@ -10436,6 +10439,7 @@ def _(rid, params: dict) -> dict:
                             _outlook_auth_requests[request_id]["toolset_enable_error"] = (
                                 toolset_enable_error
                             )
+                result_event.set()
             except Exception as exc:
                 logging.getLogger(__name__).error("[Outlook] Device code auth failed: %s", exc)
                 with _outlook_auth_lock:
@@ -10459,6 +10463,12 @@ def _(rid, params: dict) -> dict:
 
         if req.get("status") == "error":
             return _err(rid, 5032, req.get("error", "Device code request failed"))
+        if not req.get("verification_uri") or not req.get("user_code"):
+            return _err(
+                rid,
+                5036,
+                "Authentication completed but no device code challenge was produced.",
+            )
 
         return _ok(rid, {
             "request_id": request_id,

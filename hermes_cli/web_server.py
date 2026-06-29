@@ -4557,12 +4557,17 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
             client_secret=body.client_secret.strip() if body.client_secret else None,
         )
         
+        callback_ready = asyncio.Event()
+
         # Create callback that stores device code info
         async def callback(verification_uri: str, user_code: str, expires_in: int) -> None:
             logger.info("[Outlook] Device code callback triggered for request %s", request_id)
             await _outlook_device_code_callback(request_id, verification_uri, user_code, expires_in)
+            callback_ready.set()
         
         provider = GraphDeviceCodeProvider(creds, device_code_callback=callback)
+        # Explicit "authenticate" action should always mint a fresh code.
+        provider.clear_cache()
         
         # Spawn background task to run device code flow
         async def run_auth_flow():
@@ -4582,22 +4587,31 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
                         "[Outlook] Auth succeeded but toolset auto-enable failed: %s",
                         toolset_enable_error,
                     )
-                _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "success"
-                _OUTLOOK_AUTH_REQUESTS[request_id]["access_token"] = token
-                _OUTLOOK_AUTH_REQUESTS[request_id]["toolset_auto_enabled"] = bool(toolset_enabled)
+                state = _OUTLOOK_AUTH_REQUESTS.setdefault(request_id, {"status": "pending"})
+                state["status"] = "success"
+                state["access_token"] = token
+                state["toolset_auto_enabled"] = bool(toolset_enabled)
                 if toolset_enable_error:
-                    _OUTLOOK_AUTH_REQUESTS[request_id]["toolset_enable_error"] = toolset_enable_error
+                    state["toolset_enable_error"] = toolset_enable_error
                 logger.info("[Outlook] Device code flow completed successfully for request %s", request_id)
             except Exception as exc:
-                _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "error"
-                _OUTLOOK_AUTH_REQUESTS[request_id]["error"] = str(exc)
+                state = _OUTLOOK_AUTH_REQUESTS.setdefault(request_id, {"status": "pending"})
+                state["status"] = "error"
+                state["error"] = str(exc)
                 logger.error("[Outlook] Device code auth failed: %s", exc, exc_info=True)
         
         # Schedule the task (non-blocking)
         asyncio.create_task(run_auth_flow())
         
-        # Wait a moment for callback to store device code info
-        await asyncio.sleep(0.1)
+        # Wait up to 15s for callback to provide the device code challenge.
+        try:
+            await asyncio.wait_for(callback_ready.wait(), timeout=15)
+        except asyncio.TimeoutError:
+            logger.error("[Outlook] Device code callback timed out for %s", request_id)
+            raise HTTPException(
+                status_code=504,
+                detail="Timed out waiting for Microsoft device code response. Check tenant_id and client_id.",
+            )
         
         if request_id not in _OUTLOOK_AUTH_REQUESTS:
             logger.error("[Outlook] Device code callback did not store request info for %s", request_id)
