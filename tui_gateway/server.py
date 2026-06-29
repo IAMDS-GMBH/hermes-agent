@@ -5552,10 +5552,15 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         file=sys.stderr,
                     )
 
+            # Use the owning session DB (profile-aware) for post-turn title writes.
+            # In desktop app-global remote mode this prevents writing titles into
+            # the launch profile DB instead of the active session's profile DB.
+            _turn_db = getattr(agent, "_session_db", None) or _get_db()
+
             # Apply pending_title now that the DB row exists.
             _pending = session.get("pending_title")
             if _pending and status == "complete":
-                _pdb = _get_db()
+                _pdb = _turn_db
                 if _pdb:
                     _session_key = session.get("session_key") or sid
                     try:
@@ -5592,7 +5597,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         "api_mode": getattr(_agent, "api_mode", None),
                     } if _agent else None
                     maybe_auto_title(
-                        _get_db(),
+                        _turn_db,
                         session.get("session_key") or sid,
                         text,
                         raw,
