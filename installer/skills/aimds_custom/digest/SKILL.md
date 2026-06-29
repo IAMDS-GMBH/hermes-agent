@@ -1,6 +1,6 @@
 ---
 name: digest
-description: Erstellt eine wiederkehrende Zusammenfassung (Tages- oder Wochen-Digest) aus Kalender, Posteingang und offenen Aufgaben. Als Cron-Blueprint nutzbar (morning-brief / weekly-digest).
+description: Creates a recurring summary (daily or weekly digest) from calendar, inbox, and open tasks. Usable as a cron blueprint (morning-brief / weekly-digest).
 metadata:
   hermes:
     blueprint:
@@ -11,20 +11,20 @@ metadata:
 
 # Digest
 
-## Vorgehen
-1. **Daten holen:** heutige/wöchentliche Termine, wichtige neue Mails (via
-   `email-triage`-Logik), offene To-Dos / `PLAN.md`-Stände.
-2. **Priorisieren:** max. **3 Dinge, die heute zählen** (Hard Cap), dann Rest.
-3. **Kompakt liefern:**
-   - Was heute/diese Woche zählt (max 3)
-   - Termine
-   - Wichtige Mails (nur die, die Handlung brauchen)
-   - Offene Aufgaben
-4. **Ruhig bleiben:** Wenn nichts Relevantes → kurz "nichts Dringendes" statt Lärm.
+## Procedure
+1. **Gather data:** today's/this week's meetings, important new emails (via
+   `email-triage` logic), open to-dos / `PLAN.md` status.
+2. **Prioritize:** max **3 things that matter today** (hard cap), then the rest.
+3. **Deliver compactly:**
+   - What matters today/this week (max 3)
+   - Meetings
+   - Important emails (only those requiring action)
+   - Open tasks
+4. **Stay calm:** if nothing relevant exists → briefly say "nothing urgent" instead of noise.
 
-## Verifikation
-- Top-3 sind wirklich die wichtigsten, nicht die ersten besten.
-- Keine erledigten Punkte als offen gemeldet.
+## Verification
+- Top 3 are truly the highest-priority items, not just the first three.
+- No completed items are reported as open.
 
-## Was NICHT
-- Kein Wall-of-Text. Keine Mails automatisch beantworten — nur berichten.
+## What NOT to do
+- No wall of text. Do not auto-reply to emails — report only.

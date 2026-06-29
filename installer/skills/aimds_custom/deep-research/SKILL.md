@@ -1,23 +1,23 @@
 ---
 name: deep-research
-description: Recherchiert eine konkrete Frage über mehrere Quellen, prüft Behauptungen gegen, und liefert eine knappe, zitierte Synthese. Nutzen, wenn der Nutzer "recherchiere", "finde heraus", Markt-/Wettbewerbs-/Themen-Info verlangt.
+description: Researches a concrete question across multiple sources, cross-checks claims, and delivers a concise, cited synthesis. Use when the user asks to "research", "find out", or requests market/competitor/topic intelligence.
 ---
 
 # Deep Research
 
-## Vorgehen
-1. **Scope (max 1 Satz):** Was genau, wofür, welche Tiefe? Bei Unklarheit kurz fragen.
-2. **Quellen sammeln:** mind. 2-3 unabhängige Quellen. Erst **AIMDS-AI-KB**
-   (`kb_search`) prüfen — gibt es internes Wissen? Dann Web.
-3. **Gegenprüfen:** Sagen ≥2 Quellen dasselbe? Datum aktuell? Marketing vs. neutral?
-   Bei Widerspruch beide Positionen zeigen.
-4. **Synthese:** Befund zuerst, Belege danach. Jede Aussage mit Quelle (Link/Titel).
-5. **Confidence:** high / medium / low offen ausweisen. `low` nie still verstecken.
+## Procedure
+1. **Scope (max 1 sentence):** What exactly, for what purpose, and at what depth? Ask briefly if unclear.
+2. **Collect sources:** at least 2-3 independent sources. First check **AIMDS-AI-KB**
+   (`kb_search`) for internal knowledge, then the web.
+3. **Cross-check:** do ≥2 sources agree? Is the date current? Marketing vs. neutral?
+   If sources conflict, present both positions.
+4. **Synthesize:** findings first, evidence second. Cite every claim (link/title).
+5. **Confidence:** explicitly state high / medium / low. Never hide `low`.
 
-## Verifikation (vor "fertig")
-- Jede zentrale Aussage hat eine echte, benannte Quelle (keine erfundenen URLs).
-- Offene Lücken explizit nennen ("keine belegbare Aussage zu X gefunden").
+## Verification (before "done")
+- Every key claim has a real, named source (no invented URLs).
+- Open gaps are stated explicitly ("no verifiable statement on X found").
 
-## Was NICHT
-- Keine halluzinierten Zitate. Keine einzelne Marketing-Quelle als Beleg.
-- Keine veralteten Quellen ohne Datums-Hinweis.
+## What NOT to do
+- No hallucinated citations. Do not use a single marketing source as evidence.
+- No outdated sources without a date warning.

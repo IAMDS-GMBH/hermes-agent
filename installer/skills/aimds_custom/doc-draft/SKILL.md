@@ -1,20 +1,20 @@
 ---
 name: doc-draft
-description: Erstellt Dokumente, Präsentationen und Tabellen (Word/PPTX/XLSX) nach Firmen-Templates aus einem Briefing oder vorhandenem Material. Nutzen für "erstelle ein Angebot/Protokoll/Deck/Tabelle".
+description: Creates documents, presentations, and spreadsheets (Word/PPTX/XLSX) from company templates using a brief or existing material. Use for "create a proposal/minutes/deck/spreadsheet".
 ---
 
 # Doc Draft
 
-## Vorgehen
-1. **Inhalt vor Form:** erst klären was rein muss (Zweck, Empfänger, Kernaussagen).
-   Fehlt Material, gezielt nachfragen oder aus Quellen/KB ziehen.
-2. **Template wählen:** Firmen-Vorlage aus dem freigegebenen Template-Ordner / KB.
-3. **Entwurf bauen** und gegen die Briefing-Punkte prüfen.
-4. **Übergeben** als bearbeitbare Datei; der Nutzer verfeinert/gibt frei.
+## Procedure
+1. **Content before format:** first clarify what must be included (purpose, audience, key points).
+   If material is missing, ask targeted follow-up questions or pull from sources/KB.
+2. **Choose a template:** use the company template from the approved template folder / KB.
+3. **Build the draft** and verify it against the briefing points.
+4. **Deliver** as an editable file; the user refines/approves it.
 
-## Verifikation
-- Alle Briefing-Punkte sind enthalten. Richtiges Template/Branding.
-- Zahlen/Fakten belegt, nicht geschätzt (außer als solche markiert).
+## Verification
+- All briefing points are covered. Correct template/branding is used.
+- Numbers/facts are sourced, not guessed (unless explicitly marked as estimates).
 
-## Was NICHT
-- Keine erfundenen Zahlen. Keine finale Außenkommunikation ohne Freigabe.
+## What NOT to do
+- No invented numbers. No final external communication without approval.
