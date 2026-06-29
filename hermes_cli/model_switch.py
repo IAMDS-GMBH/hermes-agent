@@ -1290,6 +1290,19 @@ def list_authenticated_providers(
         except Exception:
             return False
 
+    # Bootstrap LiteLLM installs intentionally route model discovery through a
+    # single OpenAI-compatible gateway endpoint. In that mode, showing Copilot
+    # rows in the picker is misleading because those models are not intended to
+    # be selectable/callable from the bootstrap configuration.
+    _current_base_norm = _norm_url(current_base_url)
+    _bootstrap_litellm_mode = (
+        str(current_provider or "").strip().lower() == "openai-api"
+        and (
+            _current_base_norm.endswith("/litellm/v1")
+            or "/litellm/" in _current_base_norm
+        )
+    )
+
     data = fetch_models_dev()
 
     # Build curated model lists keyed by hermes provider ID
@@ -1435,6 +1448,8 @@ def list_authenticated_providers(
         # Resolve Hermes slug — e.g. "github-copilot" → "copilot"
         hermes_slug = _mdev_to_hermes.get(pid, pid)
         if hermes_slug.lower() in seen_slugs:
+            continue
+        if _bootstrap_litellm_mode and hermes_slug in {"copilot", "copilot-acp"}:
             continue
 
         # Check if credentials exist

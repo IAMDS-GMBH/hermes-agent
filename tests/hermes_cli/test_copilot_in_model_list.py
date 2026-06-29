@@ -20,3 +20,15 @@ def test_copilot_picker_uses_live_catalog_when_available():
     assert copilot is not None
     assert copilot["models"] == live_models
     assert copilot["total_models"] == len(live_models)
+
+
+@patch.dict(os.environ, {"GH_TOKEN": "test-key"}, clear=False)
+def test_copilot_picker_hidden_for_bootstrap_litellm_mode():
+    with patch("agent.models_dev.fetch_models_dev", return_value={}):
+        providers = list_authenticated_providers(
+            current_provider="openai-api",
+            current_base_url="https://staging.suite.iamds.com/litellm/v1",
+            max_models=50,
+        )
+
+    assert all(p.get("slug") != "copilot" for p in providers)
