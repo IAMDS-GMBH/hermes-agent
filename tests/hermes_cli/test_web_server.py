@@ -1359,6 +1359,30 @@ class TestWebServerEndpoints:
         telegram = next(platform for platform in status if platform["id"] == "telegram")
         assert telegram["enabled"] is False
 
+    def test_update_outlook_platform_auto_enables_toolset_after_credential_save(self, monkeypatch):
+        import tools.outlook_tool as outlook_tool
+
+        calls = {"count": 0}
+
+        def fake_enable():
+            calls["count"] += 1
+            return True, None
+
+        monkeypatch.setattr(outlook_tool, "_enable_outlook_toolset_for_cli", fake_enable)
+
+        resp = self.client.put(
+            "/api/messaging/platforms/outlook",
+            json={
+                "env": {
+                    "OUTLOOK_TENANT_ID": "tenant-123",
+                    "OUTLOOK_CLIENT_ID": "client-456",
+                },
+            },
+        )
+
+        assert resp.status_code == 200
+        assert calls["count"] == 1
+
     def test_messaging_platform_test_reports_missing_required_setup(self):
         resp = self.client.put("/api/messaging/platforms/discord", json={"enabled": True})
         assert resp.status_code == 200

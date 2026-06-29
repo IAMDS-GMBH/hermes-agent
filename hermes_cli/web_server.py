@@ -4463,6 +4463,24 @@ async def update_messaging_platform(platform_id: str, body: MessagingPlatformUpd
                 all_set = all(get_env_value(k) for k in required)
                 if all_set:
                     _write_platform_enabled(platform_id, True)
+                    if platform_id == "outlook":
+                        try:
+                            from tools.outlook_tool import _enable_outlook_toolset_for_cli
+
+                            changed, toolset_error = _enable_outlook_toolset_for_cli()
+                            if toolset_error:
+                                _log.warning(
+                                    "Outlook credentials saved but auto-enable of outlook toolset failed: %s",
+                                    toolset_error,
+                                )
+                            elif changed:
+                                _log.info(
+                                    "Auto-enabled outlook toolset after Outlook credential save."
+                                )
+                        except Exception:
+                            _log.exception(
+                                "Outlook credentials saved, but toolset auto-enable raised."
+                            )
 
         return {"ok": True, "platform": platform_id}
     except HTTPException:
