@@ -60,7 +60,12 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    let mut models: Vec<String> = data.data.into_iter().map(|m| m.id).collect();
+    let mut models: Vec<String> = data
+        .data
+        .into_iter()
+        .map(|m| m.id.trim().to_string())
+        .filter(|id| !id.is_empty() && !id.starts_with('_'))
+        .collect();
     models.sort();
 
     if models.is_empty() {
