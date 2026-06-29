@@ -4569,8 +4569,24 @@ async def outlook_authenticate_start(body: OutlookAuthStart):
             try:
                 logger.info("[Outlook] Device code flow starting for request %s", request_id)
                 token = await provider.get_access_token()
+                toolset_enabled = False
+                toolset_enable_error = None
+                try:
+                    from tools.outlook_tool import _enable_outlook_toolset_for_cli
+
+                    toolset_enabled, toolset_enable_error = _enable_outlook_toolset_for_cli()
+                except Exception as exc:
+                    toolset_enable_error = str(exc)
+                if toolset_enable_error:
+                    logger.warning(
+                        "[Outlook] Auth succeeded but toolset auto-enable failed: %s",
+                        toolset_enable_error,
+                    )
                 _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "success"
                 _OUTLOOK_AUTH_REQUESTS[request_id]["access_token"] = token
+                _OUTLOOK_AUTH_REQUESTS[request_id]["toolset_auto_enabled"] = bool(toolset_enabled)
+                if toolset_enable_error:
+                    _OUTLOOK_AUTH_REQUESTS[request_id]["toolset_enable_error"] = toolset_enable_error
                 logger.info("[Outlook] Device code flow completed successfully for request %s", request_id)
             except Exception as exc:
                 _OUTLOOK_AUTH_REQUESTS[request_id]["status"] = "error"
@@ -4625,8 +4641,18 @@ async def outlook_authenticate_status(request_id: str):
     elif status == "success":
         # Return access token and clean up
         token = req.get("access_token", "")
+        toolset_auto_enabled = bool(req.get("toolset_auto_enabled", False))
+        toolset_enable_error = req.get("toolset_enable_error")
         del _OUTLOOK_AUTH_REQUESTS[request_id]
-        return {"ok": True, "status": "success", "access_token": token}
+        payload = {
+            "ok": True,
+            "status": "success",
+            "access_token": token,
+            "toolset_auto_enabled": toolset_auto_enabled,
+        }
+        if toolset_enable_error:
+            payload["toolset_enable_error"] = str(toolset_enable_error)
+        return payload
     elif status == "error":
         error = req.get("error", "Unknown error")
         del _OUTLOOK_AUTH_REQUESTS[request_id]

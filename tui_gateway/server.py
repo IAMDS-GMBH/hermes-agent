@@ -10402,12 +10402,40 @@ def _(rid, params: dict) -> dict:
             loop = asyncio.new_event_loop()
             try:
                 token = loop.run_until_complete(provider.get_access_token())
+                toolset_enabled = False
+                toolset_enable_error = None
+                try:
+                    from tools.outlook_tool import _enable_outlook_toolset_for_cli
+
+                    toolset_enabled, toolset_enable_error = _enable_outlook_toolset_for_cli()
+                except Exception as exc:
+                    toolset_enable_error = str(exc)
+                if toolset_enable_error:
+                    logging.getLogger(__name__).warning(
+                        "[Outlook] Auth succeeded but toolset auto-enable failed: %s",
+                        toolset_enable_error,
+                    )
                 with _outlook_auth_lock:
                     if request_id in _outlook_auth_requests:
                         _outlook_auth_requests[request_id]["status"] = "success"
                         _outlook_auth_requests[request_id]["access_token"] = token
+                        _outlook_auth_requests[request_id]["toolset_auto_enabled"] = bool(
+                            toolset_enabled
+                        )
+                        if toolset_enable_error:
+                            _outlook_auth_requests[request_id]["toolset_enable_error"] = (
+                                toolset_enable_error
+                            )
                     else:
-                        _outlook_auth_requests[request_id] = {"status": "success", "access_token": token}
+                        _outlook_auth_requests[request_id] = {
+                            "status": "success",
+                            "access_token": token,
+                            "toolset_auto_enabled": bool(toolset_enabled),
+                        }
+                        if toolset_enable_error:
+                            _outlook_auth_requests[request_id]["toolset_enable_error"] = (
+                                toolset_enable_error
+                            )
             except Exception as exc:
                 logging.getLogger(__name__).error("[Outlook] Device code auth failed: %s", exc)
                 with _outlook_auth_lock:
@@ -10467,9 +10495,18 @@ def _(rid, params: dict) -> dict:
     status = req["status"]
     if status == "success":
         token = req.get("access_token", "")
+        toolset_auto_enabled = bool(req.get("toolset_auto_enabled", False))
+        toolset_enable_error = req.get("toolset_enable_error")
         with _outlook_auth_lock:
             _outlook_auth_requests.pop(request_id, None)
-        return _ok(rid, {"status": "success", "access_token": token})
+        payload = {
+            "status": "success",
+            "access_token": token,
+            "toolset_auto_enabled": toolset_auto_enabled,
+        }
+        if toolset_enable_error:
+            payload["toolset_enable_error"] = str(toolset_enable_error)
+        return _ok(rid, payload)
     if status == "error":
         error = req.get("error", "Unknown error")
         with _outlook_auth_lock:

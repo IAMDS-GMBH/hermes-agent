@@ -62,3 +62,44 @@ def test_enable_outlook_toolset_for_cli_appends_when_missing(monkeypatch):
     assert error is None
     assert changed is True
     assert "outlook" in saved["config"]["platform_toolsets"]["cli"]
+
+
+def test_auto_enable_outlook_toolset_if_token_ready_no_token(monkeypatch):
+    monkeypatch.setattr(outlook_tool, "_has_valid_token_cache", lambda: False)
+
+    called = {"count": 0}
+
+    def _should_not_run():
+        called["count"] += 1
+        return True, None
+
+    monkeypatch.setattr(outlook_tool, "_enable_outlook_toolset_for_cli", _should_not_run)
+
+    changed, error = outlook_tool._auto_enable_outlook_toolset_if_token_ready()
+
+    assert changed is False
+    assert error is None
+    assert called["count"] == 0
+
+
+def test_outlook_read_emails_auto_enables_when_token_ready(monkeypatch):
+    monkeypatch.setattr(
+        outlook_tool,
+        "_get_outlook_creds",
+        lambda: {"tenant_id": "tenant", "client_id": "client", "client_secret": ""},
+    )
+    monkeypatch.setattr(outlook_tool, "_has_valid_token_cache", lambda: True)
+    monkeypatch.setattr(outlook_tool, "_fetch_emails_async", lambda *args, **kwargs: [])
+
+    enable_calls = {"count": 0}
+
+    def _enable():
+        enable_calls["count"] += 1
+        return True, None
+
+    monkeypatch.setattr(outlook_tool, "_enable_outlook_toolset_for_cli", _enable)
+
+    payload = json.loads(outlook_tool.outlook_read_emails())
+
+    assert payload["count"] == 0
+    assert enable_calls["count"] == 1

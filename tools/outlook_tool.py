@@ -111,6 +111,16 @@ def _enable_outlook_toolset_for_cli() -> tuple[bool, str | None]:
         return False, str(exc)
 
 
+def _auto_enable_outlook_toolset_if_token_ready() -> tuple[bool, str | None]:
+    """Enable the outlook toolset once delegated auth is already usable.
+
+    Returns (changed, error) and no-ops when the token cache is not ready yet.
+    """
+    if not _has_valid_token_cache():
+        return False, None
+    return _enable_outlook_toolset_for_cli()
+
+
 def _has_valid_token_cache() -> bool:
     """Return True if a usable token/refresh already exists on disk."""
     try:
@@ -417,6 +427,13 @@ def outlook_read_emails(
             )
         })
 
+    # Best-effort: if auth is already usable, ensure toolset is enabled now.
+    # This covers chat/desktop paths where token cache exists before a tool
+    # call and avoids waiting for a fresh device-code round trip.
+    _, pre_enable_error = _auto_enable_outlook_toolset_if_token_ready()
+    if pre_enable_error:
+        logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", pre_enable_error)
+
     # Step 1 — if caller is providing a device_code to poll (user just authed)
     if device_code:
         try:
@@ -428,7 +445,7 @@ def outlook_read_emails(
                 "status": "pending",
                 "message": "Authentication still pending. Please complete sign-in at the URL provided, then try again.",
             })
-        toolset_enabled, toolset_error = _enable_outlook_toolset_for_cli()
+        toolset_enabled, toolset_error = _auto_enable_outlook_toolset_if_token_ready()
         if toolset_error:
             logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", toolset_error)
         # Fall through — now fetch emails with the fresh token
@@ -492,6 +509,11 @@ def outlook_read_calendar_entries(
             )
         })
 
+    # Best-effort: if auth is already usable, ensure toolset is enabled now.
+    _, pre_enable_error = _auto_enable_outlook_toolset_if_token_ready()
+    if pre_enable_error:
+        logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", pre_enable_error)
+
     if device_code:
         try:
             authed = _run_async(
@@ -507,7 +529,7 @@ def outlook_read_calendar_entries(
                 "status": "pending",
                 "message": "Authentication still pending. Please complete sign-in at the URL provided, then try again.",
             })
-        toolset_enabled, toolset_error = _enable_outlook_toolset_for_cli()
+        toolset_enabled, toolset_error = _auto_enable_outlook_toolset_if_token_ready()
         if toolset_error:
             logger.warning("[Outlook] Could not auto-enable outlook toolset: %s", toolset_error)
 
