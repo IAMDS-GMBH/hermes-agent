@@ -2293,20 +2293,26 @@ function Apply-BootstrapCredentials {
         Write-Success "Updated $configPath with bootstrap credentials"
     }
 
-    # Update .env with secrets.
+    # Update .env with bootstrap credentials/runtime endpoints.
     # On update/reinstall flows bootstrapApiKey can be empty; appending
     # OPENAI_API_KEY= would shadow the user's existing key with a blank value.
     $envPath = "$HermesHome\.env"
     if ((Test-Path $envPath) -and (-not [string]::IsNullOrWhiteSpace($bootstrapApiKey))) {
-        $envContent = @"
-# Added by bootstrap installer
-OPENAI_API_KEY=$bootstrapApiKey
-"@
+        $envLines = @(
+            "# Added by bootstrap installer"
+            "OPENAI_API_KEY=$bootstrapApiKey"
+        )
+        # OPENAI_BASE_URL drives openai-api model discovery/runtime routing.
+        # Without this, picker discovery falls back to api.openai.com.
+        if (-not [string]::IsNullOrWhiteSpace($llmGatewayUrl)) {
+            $envLines += "OPENAI_BASE_URL=$llmGatewayUrl"
+        }
+        $envContent = ($envLines -join "`n") + "`n"
         
         # Append without UTF-8 BOM (Add-Content -Encoding UTF8 adds BOM in PS5.1)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::AppendAllText($envPath, $envContent, $utf8NoBom)
-        Write-Success "Configured $envPath with API key"
+        Write-Success "Configured $envPath with bootstrap API key/base URL"
     } elseif ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
         Write-Info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in $envPath"
     }

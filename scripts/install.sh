@@ -1861,7 +1861,7 @@ PYEOF
         fi
     fi
 
-    # Update .env with secrets.
+    # Update .env with bootstrap credentials/runtime endpoints.
     # On update/reinstall flows HERMES_BOOTSTRAP_API_KEY may be empty; appending
     # OPENAI_API_KEY= would shadow the user's existing key with a blank value.
     if [ -n "${HERMES_BOOTSTRAP_API_KEY:-}" ] && [ -f "$HERMES_HOME/.env" ]; then
@@ -1869,9 +1869,14 @@ PYEOF
         {
             echo "# Added by bootstrap installer"
             echo "OPENAI_API_KEY=${HERMES_BOOTSTRAP_API_KEY}"
+            # OPENAI_BASE_URL drives openai-api model discovery/runtime routing.
+            # Without this, picker discovery falls back to api.openai.com.
+            if [ -n "${llm_gateway_url:-}" ]; then
+                echo "OPENAI_BASE_URL=${llm_gateway_url}"
+            fi
         } >> "$HERMES_HOME/.env"
 
-        log_success "Configured .env with API key"
+        log_success "Configured .env with bootstrap API key/base URL"
     elif [ -z "${HERMES_BOOTSTRAP_API_KEY:-}" ]; then
         log_info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in ~/.hermes/.env"
     fi
