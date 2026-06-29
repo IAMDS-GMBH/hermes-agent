@@ -2451,7 +2451,15 @@ def _load_provider_models_cache() -> dict:
             return {}
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        # Backward compatibility for bootstrap-installer cache files that wrote
+        # {"providers": {...}} instead of the flat {provider_slug: entry} map
+        # used by cached_provider_model_ids().
+        nested = data.get("providers")
+        if isinstance(nested, dict):
+            return nested
+        return data
     except Exception:
         return {}
 
@@ -2490,10 +2498,18 @@ def cached_provider_model_ids(
     if (
         not force_refresh
         and isinstance(entry, dict)
-        and entry.get("fp") == fp
+        and (
+            # Bootstrap-installer pins provider rows before runtime creds/env are
+            # materialized, so fingerprint matching would otherwise ignore the
+            # seeded model list and fall back to stale static defaults.
+            entry.get("fp") == "pinned" or entry.get("fp") == fp
+        )
         and isinstance(entry.get("models"), list)
         and entry["models"]
-        and (now - float(entry.get("at", 0))) < ttl_seconds
+        and (
+            entry.get("fp") == "pinned"
+            or (now - float(entry.get("at", 0))) < ttl_seconds
+        )
     ):
         return list(entry["models"])
 
