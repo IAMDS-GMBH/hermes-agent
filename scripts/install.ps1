@@ -2614,6 +2614,25 @@ You are Hermes, an AI agent originally developed by Nous Research and extended a
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path "$HermesHome\skills" $blockedCat)
     }
 
+    # Remove explicitly deactivated skills so they are not surfaced in
+    # desktop skill lists and cannot be loaded by the runtime.
+    foreach ($blockedSkillDir in @(
+        'creative/architecture-diagram',
+        'creative/ascii-video',
+        'creative/baoyu-infographic',
+        'creative/manim-video',
+        'creative/popular-web-designs',
+        'creative/pretext',
+        'creative/songwriting-and-ai-music',
+        'creative/touchdesigner-mcp',
+        'media/songsee',
+        'dogfood',
+        'yuanbao',
+        'github'
+    )) {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path "$HermesHome\skills" $blockedSkillDir)
+    }
+
     # Apply bootstrap credentials if provided by the installer UI
     Apply-BootstrapCredentials
 }

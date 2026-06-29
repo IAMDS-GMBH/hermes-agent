@@ -2124,6 +2124,24 @@ SOUL_EOF
         for blocked_cat in autonomous-ai-agents data-science email general mlops smart-home social-media software-development; do
             rm -rf "$HERMES_HOME/skills/$blocked_cat"
         done
+
+        # Remove explicitly deactivated skills so they are not surfaced in
+        # desktop skill lists and cannot be loaded by the runtime.
+        for blocked_skill_dir in \
+            "creative/architecture-diagram" \
+            "creative/ascii-video" \
+            "creative/baoyu-infographic" \
+            "creative/manim-video" \
+            "creative/popular-web-designs" \
+            "creative/pretext" \
+            "creative/songwriting-and-ai-music" \
+            "creative/touchdesigner-mcp" \
+            "media/songsee" \
+            "dogfood" \
+            "yuanbao" \
+            "github"; do
+            rm -rf "$HERMES_HOME/skills/$blocked_skill_dir"
+        done
     fi
 
     # Apply bootstrap credentials if provided by the installer UI
