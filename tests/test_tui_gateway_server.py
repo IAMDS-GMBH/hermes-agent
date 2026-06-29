@@ -3731,6 +3731,14 @@ def test_session_info_includes_mcp_servers(monkeypatch):
     assert info["mcp_servers"] == fake_status
 
 
+def test_session_info_falls_back_to_resolved_model_when_agent_model_empty(monkeypatch):
+    monkeypatch.setattr(server, "_resolve_model", lambda: "deepseek/deepseek-v4-pro")
+
+    info = server._session_info(types.SimpleNamespace(tools=[], model="", provider="openai-api"))
+
+    assert info["model"] == "deepseek/deepseek-v4-pro"
+
+
 # ---------------------------------------------------------------------------
 # History-mutating commands must reject while session.running is True.
 # Without these guards, prompt.submit's post-run history write either

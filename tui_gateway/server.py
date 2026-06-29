@@ -2275,8 +2275,9 @@ def _session_info(agent, session: dict | None = None) -> dict:
         yolo = bool(_YOLO_MODE_FROZEN) or session_yolo or _get_approval_mode() == "off"
     except Exception:
         yolo = False
+    model = str(getattr(agent, "model", "") or "").strip() or _resolve_model()
     info: dict = {
-        "model": getattr(agent, "model", ""),
+        "model": model,
         "provider": getattr(agent, "provider", ""),
         "reasoning_effort": reasoning_effort,
         "service_tier": service_tier,

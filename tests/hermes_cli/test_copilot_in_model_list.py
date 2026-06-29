@@ -24,11 +24,53 @@ def test_copilot_picker_uses_live_catalog_when_available():
 
 @patch.dict(os.environ, {"GH_TOKEN": "test-key"}, clear=False)
 def test_copilot_picker_hidden_for_bootstrap_litellm_mode():
-    with patch("agent.models_dev.fetch_models_dev", return_value={}):
+    fake_models_dev = {
+        "openai": {"env": ["OPENAI_API_KEY"]},
+        "github-copilot": {"env": ["GH_TOKEN"]},
+    }
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test", "GH_TOKEN": "gh-test"}, clear=False), \
+         patch("agent.models_dev.fetch_models_dev", return_value=fake_models_dev), \
+         patch(
+             "hermes_cli.models.cached_provider_model_ids",
+             side_effect=lambda provider, **_kwargs: (
+                 ["litellm/model-a"] if provider == "openai-api" else ["gpt-5.4"]
+             ),
+         ):
         providers = list_authenticated_providers(
             current_provider="openai-api",
             current_base_url="https://staging.suite.iamds.com/litellm/v1",
             max_models=50,
         )
 
+    assert any(p.get("slug") == "openai-api" for p in providers)
+    assert all(p.get("slug") != "copilot" for p in providers)
+
+
+@patch.dict(os.environ, {"GH_TOKEN": "test-key"}, clear=False)
+def test_copilot_picker_hidden_for_bootstrap_litellm_mode_from_env_base_url():
+    fake_models_dev = {
+        "openai": {"env": ["OPENAI_API_KEY"]},
+        "github-copilot": {"env": ["GH_TOKEN"]},
+    }
+    with patch.dict(
+        os.environ,
+        {
+            "OPENAI_API_KEY": "sk-test",
+            "OPENAI_BASE_URL": "https://staging.suite.iamds.com/litellm/v1",
+            "GH_TOKEN": "gh-test",
+        },
+        clear=False,
+    ), patch("agent.models_dev.fetch_models_dev", return_value=fake_models_dev), patch(
+        "hermes_cli.models.cached_provider_model_ids",
+        side_effect=lambda provider, **_kwargs: (
+            ["litellm/model-a"] if provider == "openai-api" else ["gpt-5.4"]
+        ),
+    ):
+        providers = list_authenticated_providers(
+            current_provider="openai-api",
+            current_base_url="",
+            max_models=50,
+        )
+
+    assert any(p.get("slug") == "openai-api" for p in providers)
     assert all(p.get("slug") != "copilot" for p in providers)

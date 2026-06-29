@@ -1294,14 +1294,29 @@ def list_authenticated_providers(
     # single OpenAI-compatible gateway endpoint. In that mode, showing Copilot
     # rows in the picker is misleading because those models are not intended to
     # be selectable/callable from the bootstrap configuration.
+    _provider_norm = str(current_provider or "").strip().lower()
     _current_base_norm = _norm_url(current_base_url)
-    _bootstrap_litellm_mode = (
-        str(current_provider or "").strip().lower() == "openai-api"
-        and (
-            _current_base_norm.endswith("/litellm/v1")
-            or "/litellm/" in _current_base_norm
-        )
+    _openai_provider_cfg_base = ""
+    if isinstance(user_providers, dict):
+        _openai_cfg = user_providers.get("openai-api")
+        if isinstance(_openai_cfg, dict):
+            _openai_provider_cfg_base = str(_openai_cfg.get("base_url") or "").strip()
+    try:
+        from hermes_cli.config import get_env_value
+
+        _openai_env_base = str(get_env_value("OPENAI_BASE_URL") or "").strip()
+    except Exception:
+        _openai_env_base = str(os.environ.get("OPENAI_BASE_URL") or "").strip()
+    _litellm_base_candidates = (
+        _current_base_norm,
+        _norm_url(_openai_provider_cfg_base),
+        _norm_url(_openai_env_base),
     )
+    _litellm_gateway_configured = any(
+        base and (base.endswith("/litellm/v1") or "/litellm/" in base)
+        for base in _litellm_base_candidates
+    )
+    _bootstrap_litellm_mode = _provider_norm in {"", "auto", "openai-api"} and _litellm_gateway_configured
 
     data = fetch_models_dev()
 
@@ -1351,6 +1366,8 @@ def list_authenticated_providers(
     from hermes_cli.models import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
     from hermes_cli.providers import ALIASES as _PROVIDER_ALIAS_TABLE
     for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+        if _bootstrap_litellm_mode and hermes_id in {"copilot", "copilot-acp"}:
+            continue
         # Skip vendor names that are merely aliases routing through an
         # aggregator (e.g. bare "openai" → "openrouter"). These are NOT
         # directly-routable providers: emitting them as their own picker
@@ -1604,6 +1621,8 @@ def list_authenticated_providers(
 
     for _cp in _canon_provs:
         if _cp.slug.lower() in seen_slugs:
+            continue
+        if _bootstrap_litellm_mode and _cp.slug in {"copilot", "copilot-acp"}:
             continue
 
         # Check credentials via PROVIDER_REGISTRY (auth.py)
