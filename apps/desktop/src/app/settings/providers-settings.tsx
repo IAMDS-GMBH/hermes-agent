@@ -9,7 +9,7 @@ import {
   sortProviders
 } from '@/components/desktop-onboarding-overlay'
 import { Button } from '@/components/ui/button'
-import { listOAuthProviders } from '@/hermes'
+import { getHermesConfigRecord, listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -75,6 +75,65 @@ function buildProviderKeyGroups(vars: Record<string, EnvVarInfo>): ProviderKeyGr
   }
 
   return groups.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name))
+}
+
+function includesIamdsHost(value: unknown): boolean {
+  const raw = typeof value === 'string' ? value.trim() : ''
+
+  if (!raw) {
+    return false
+  }
+
+  try {
+    const host = new URL(raw).hostname.toLowerCase()
+    return host.includes('iamds.com')
+  } catch {
+    return raw.toLowerCase().includes('iamds.com')
+  }
+}
+
+function isIamdsLiteLlmConfig(config: unknown): boolean {
+  if (!config || typeof config !== 'object') {
+    return false
+  }
+
+  const cfg = config as Record<string, unknown>
+  const model = cfg.model
+  const providers = cfg.providers
+  const modelBaseUrl =
+    model && typeof model === 'object'
+      ? (model as Record<string, unknown>).base_url
+      : ''
+  const openAiProviderBaseUrl =
+    providers && typeof providers === 'object'
+      ? (
+          ((providers as Record<string, unknown>)['openai-api'] as Record<string, unknown> | undefined)
+            ?.base_url
+        )
+      : ''
+
+  return includesIamdsHost(modelBaseUrl) || includesIamdsHost(openAiProviderBaseUrl)
+}
+
+function buildIamdsLiteLlmKeyGroup(vars: Record<string, EnvVarInfo>): ProviderKeyGroup[] {
+  const key = 'OPENAI_API_KEY'
+  const info = vars[key]
+
+  if (!info) {
+    return []
+  }
+
+  return [
+    {
+      advanced: [],
+      description: 'IAMDS LiteLLM gateway key from ~/.hermes/.env',
+      docsUrl: '',
+      hasAnySet: info.is_set,
+      name: 'IAMDS LiteLLM',
+      primary: [key, info],
+      priority: 0
+    }
+  ]
 }
 
 // Deliberately a near-1:1 replica of the first-run onboarding picker
@@ -168,11 +227,28 @@ function NoProviderKeys() {
   )
 }
 
+function IamdsAccountPanel({ onWantApiKey }: { onWantApiKey: () => void }) {
+  return (
+    <section className="mb-5 grid gap-2">
+      <SettingsCategoryHeading icon={KeyRound} title="IAMDS LiteLLM" />
+      <p className="-mt-2 mb-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+        This provider is configured via API key, not OAuth.
+      </p>
+      <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-tertiary) px-3 py-2">
+        <Button onClick={onWantApiKey} size="sm" type="button">
+          Open API key settings
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
   const [openProvider, setOpenProvider] = useState<null | string>(null)
+  const [iamdsLiteLlmMode, setIamdsLiteLlmMode] = useState(false)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
@@ -201,6 +277,25 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
     return () => void (cancelled = true)
   }, [onboardingActive])
 
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const config = await getHermesConfigRecord()
+        if (!cancelled) {
+          setIamdsLiteLlmMode(isIamdsLiteLlmConfig(config))
+        }
+      } catch {
+        if (!cancelled) {
+          setIamdsLiteLlmMode(false)
+        }
+      }
+    })()
+
+    return () => void (cancelled = true)
+  }, [])
+
   if (!vars) {
     return <LoadingState label={t.settings.providers.loading} />
   }
@@ -208,9 +303,9 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
   const hasOauth = oauthProviders.length > 0
   // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
-  const showApiKeys = view === 'keys' || !hasOauth
+  const showApiKeys = iamdsLiteLlmMode ? view === 'keys' : view === 'keys' || !hasOauth
 
-  const keyGroups = buildProviderKeyGroups(vars)
+  const keyGroups = iamdsLiteLlmMode ? buildIamdsLiteLlmKeyGroup(vars) : buildProviderKeyGroups(vars)
 
   if (showApiKeys) {
     return (
@@ -231,6 +326,14 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
         ) : (
           <NoProviderKeys />
         )}
+      </SettingsContent>
+    )
+  }
+
+  if (iamdsLiteLlmMode) {
+    return (
+      <SettingsContent>
+        <IamdsAccountPanel onWantApiKey={() => onViewChange('keys')} />
       </SettingsContent>
     )
   }
