@@ -272,6 +272,22 @@ class TestFetchApiModels:
         assert probe["resolved_base_url"] == "https://api.githubcopilot.com"
         assert probe["used_fallback"] is False
 
+    def test_probe_api_models_filters_hidden_underscore_ids(self):
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "_internal"}, {"id": " visible-model "}, {"id": "__hidden2"}, {"id": ""}, {"id": "another-model"}]}'
+
+        with patch("hermes_cli.models.urllib.request.urlopen", return_value=_Resp()):
+            probe = probe_api_models("key", "https://example.com/v1")
+
+        assert probe["models"] == ["visible-model", "another-model"]
+
     def test_fetch_github_model_catalog_filters_non_chat_models(self):
         class _Resp:
             def __enter__(self):

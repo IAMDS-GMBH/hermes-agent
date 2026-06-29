@@ -3321,6 +3321,21 @@ def probe_api_models(
     ``Authorization: Bearer``.  The response shape (``data[].id``) is
     identical, so the same parser works for both.
     """
+    def _sanitize_model_ids(raw_models: Any) -> list[str]:
+        """Normalize fetched model IDs and drop hidden/internal entries."""
+        if not isinstance(raw_models, list):
+            return []
+        sanitized: list[str] = []
+        for item in raw_models:
+            if isinstance(item, dict):
+                model_id = str(item.get("id") or "").strip()
+            else:
+                model_id = str(item or "").strip()
+            if not model_id or model_id.startswith("_"):
+                continue
+            sanitized.append(model_id)
+        return sanitized
+
     normalized = (base_url or "").strip().rstrip("/")
     if not normalized:
         return {
@@ -3334,7 +3349,7 @@ def probe_api_models(
     if _is_github_models_base_url(normalized):
         models = _fetch_github_models(api_key=api_key, timeout=timeout)
         return {
-            "models": models,
+            "models": _sanitize_model_ids(models),
             "probed_url": COPILOT_MODELS_URL,
             "resolved_base_url": COPILOT_BASE_URL,
             "suggested_base_url": None,
@@ -3368,7 +3383,7 @@ def probe_api_models(
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode())
                 return {
-                    "models": [m.get("id", "") for m in data.get("data", [])],
+                    "models": _sanitize_model_ids(data.get("data", [])),
                     "probed_url": url,
                     "resolved_base_url": candidate_base.rstrip("/"),
                     "suggested_base_url": alternate_base if alternate_base != candidate_base else normalized,
