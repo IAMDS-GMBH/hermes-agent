@@ -834,6 +834,12 @@ def create_profile(
                     dst = profile_dir / relpath
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
+        elif not no_skills:
+            # Fresh profile: inherit default-profile skills so user-authored
+            # skills in ~/.hermes/skills are available in every new profile.
+            default_skills = _get_default_hermes_home() / "skills"
+            if default_skills.is_dir():
+                shutil.copytree(default_skills, profile_dir / "skills", dirs_exist_ok=True)
 
     # Seed a default SOUL.md so the user has a file to customize immediately.
     # Skipped when the profile already has one (from --clone / --clone-all).

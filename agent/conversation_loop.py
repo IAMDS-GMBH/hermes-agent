@@ -71,6 +71,91 @@ logger = logging.getLogger(__name__)
 INTERRUPT_WAITING_FOR_MODEL_PREFIX = "Operation interrupted: waiting for model response ("
 
 
+def _collect_initial_query_text_segments(
+    api_messages: List[Dict[str, Any]],
+    *,
+    max_segments: int = 40,
+) -> Dict[str, Any]:
+    """Summarize text-bearing fields in the first API request payload.
+
+    Returns per-segment metadata (location/type/chars) without logging raw text.
+    """
+    segments: List[Dict[str, Any]] = []
+    total_chars = 0
+
+    def _append_segment(location: str, segment_type: str, text_value: Any) -> None:
+        nonlocal total_chars
+        if not isinstance(text_value, str):
+            return
+        seg_chars = len(text_value)
+        total_chars += seg_chars
+        segments.append(
+            {
+                "location": location,
+                "type": segment_type,
+                "chars": seg_chars,
+            }
+        )
+
+    for msg_idx, msg in enumerate(api_messages):
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "unknown")
+        base = f"api_messages[{msg_idx}]"
+
+        content = msg.get("content")
+        if isinstance(content, str):
+            _append_segment(f"{base}.content", f"{role}_content", content)
+        elif isinstance(content, list):
+            for part_idx, part in enumerate(content):
+                if not isinstance(part, dict):
+                    continue
+                part_type = str(part.get("type") or "unknown")
+                part_base = f"{base}.content[{part_idx}]"
+                for text_key in ("text", "input_text", "output_text"):
+                    if text_key in part:
+                        _append_segment(
+                            f"{part_base}.{text_key}",
+                            f"{role}_{part_type}_{text_key}",
+                            part.get(text_key),
+                        )
+
+        _append_segment(
+            f"{base}.reasoning_content",
+            f"{role}_reasoning_content",
+            msg.get("reasoning_content"),
+        )
+
+        tool_calls = msg.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tc_idx, tool_call in enumerate(tool_calls):
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function")
+                if not isinstance(function, dict):
+                    continue
+                call_base = f"{base}.tool_calls[{tc_idx}].function"
+                _append_segment(
+                    f"{call_base}.name",
+                    f"{role}_tool_call_name",
+                    function.get("name"),
+                )
+                _append_segment(
+                    f"{call_base}.arguments",
+                    f"{role}_tool_call_arguments",
+                    function.get("arguments"),
+                )
+
+    reported_segments = segments[:max_segments]
+    return {
+        "total_chars": total_chars,
+        "segment_count": len(segments),
+        "reported_segment_count": len(reported_segments),
+        "omitted_segment_count": max(0, len(segments) - len(reported_segments)),
+        "segments": reported_segments,
+    }
+
+
 def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str]:
     """Return a user-facing error when Ollama is loaded with too little context."""
     if not getattr(agent, "tools", None):
@@ -795,6 +880,26 @@ def run_conversation(
             logging.debug(f"API Request - Model: {agent.model}, Messages: {len(messages)}, Tools: {len(agent.tools) if agent.tools else 0}")
             logging.debug(f"Last message role: {messages[-1]['role'] if messages else 'none'}")
             logging.debug(f"Total message size: ~{approx_tokens:,} tokens")
+        if api_call_count == 1:
+            initial_text_payload = _collect_initial_query_text_segments(api_messages)
+            payload_details = json.dumps(initial_text_payload["segments"], ensure_ascii=False)
+            logger.info(
+                "Initial query text payload: total_chars=%d segments=%d omitted=%d details=%s",
+                initial_text_payload["total_chars"],
+                initial_text_payload["segment_count"],
+                initial_text_payload["omitted_segment_count"],
+                payload_details,
+            )
+            if os.environ.get("HERMES_DESKTOP") == "1":
+                # Desktop's electron shell tails backend stdout/stderr into
+                # desktop.log; mirror this one-line payload breakdown there.
+                agent._safe_print(
+                    "Initial query text payload: "
+                    f"total_chars={initial_text_payload['total_chars']} "
+                    f"segments={initial_text_payload['segment_count']} "
+                    f"omitted={initial_text_payload['omitted_segment_count']} "
+                    f"details={payload_details}"
+                )
         
         api_start_time = time.time()
         retry_count = 0

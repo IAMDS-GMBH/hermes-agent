@@ -202,6 +202,23 @@ class TestCreateProfile:
             / "SKILL.md"
         ).read_text() == "---\nname: installed-skill\n---\n"
 
+    def test_fresh_profile_copies_default_profile_skills(self, profile_env):
+        tmp_path = profile_env
+        default_home = tmp_path / ".hermes"
+        skill_dir = default_home / "skills" / "custom" / "shared-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: shared-skill\n---\n")
+
+        profile_dir = create_profile("coder", no_alias=True)
+
+        assert (
+            profile_dir
+            / "skills"
+            / "custom"
+            / "shared-skill"
+            / "SKILL.md"
+        ).read_text() == "---\nname: shared-skill\n---\n"
+
     def test_clone_all_copies_entire_tree(self, profile_env):
         tmp_path = profile_env
         default_home = tmp_path / ".hermes"
