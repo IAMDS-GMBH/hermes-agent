@@ -9839,29 +9839,31 @@ def _(rid, params: dict) -> dict:
     """
     try:
         from agent.litellm_hub_client import get_active_agents, set_active_agents
+        from hermes_cli.config import load_config
+        from hermes_cli.tools_config import _apply_toolset_change
         from tools.registry import invalidate_check_fn_cache
+
         agent_name = str(params.get("agent_name") or "").strip()
         if not agent_name:
             return _err(rid, 5036, "agent_name is required")
         current = get_active_agents()
         if agent_name not in current:
             set_active_agents(current + [agent_name])
+
+        # Always enable LiteLLM Agents (A2A) toolset when at least one hub
+        # agent is active. This updates config and immediately refreshes active
+        # sessions so the tool appears without requiring a manual reset.
+        _apply_toolset_change(load_config() or {}, "cli", ["litellm_agents"], "enable")
         invalidate_check_fn_cache()
 
-        # Auto-enable the LiteLLM Agents (A2A) toolset whenever at least one
-        # agent is active, so the tools become available without a manual step.
-        try:
-            from hermes_cli.config import load_config, save_config
-            from hermes_cli.tools_config import _apply_toolset_change, _get_platform_tools
-            cfg = load_config()
-            if "litellm_agents" not in _get_platform_tools(cfg, "cli", include_default_mcp_servers=False):
-                _apply_toolset_change(cfg, "cli", ["litellm_agents"], "enable")
-                save_config(cfg)
-                session = _sessions.get(params.get("session_id", ""))
-                if session:
-                    _reset_session_agent(params.get("session_id", ""), session)
-        except Exception as toolset_err:
-            logger.warning("[litellm_hub] Could not auto-enable litellm_agents toolset: %s", toolset_err)
+        session_id = str(params.get("session_id") or "").strip()
+        if session_id:
+            session = _sessions.get(session_id)
+            if session:
+                _reset_session_agent(session_id, session)
+        else:
+            for sid, session in list(_sessions.items()):
+                _reset_session_agent(sid, session)
 
         return _ok(rid, {"active_agents": get_active_agents()})
     except Exception as e:
