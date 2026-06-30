@@ -3511,7 +3511,7 @@ _PLATFORM_OVERRIDES: dict[str, dict[str, Any]] = {
         "required_env": (),
     },
     "outlook": {
-        "name": "Microsoft Outlook",
+        "name": "Outlook",
         "description": "Receive and reply to emails via the Microsoft Graph API.",
         "docs_url": "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps",
         "env_vars": (
@@ -3527,6 +3527,15 @@ _PLATFORM_OVERRIDES: dict[str, dict[str, Any]] = {
             "OUTLOOK_TENANT_ID",
             "OUTLOOK_CLIENT_ID",
         ),
+    },
+    "teams": {
+        "name": "Microsoft Teams",
+    },
+    "microsoft_teams": {
+        "name": "Microsoft Teams",
+    },
+    "line": {
+        "name": "LINE",
     },
     "api_server": {
         "name": "API server",
@@ -3571,6 +3580,9 @@ _PLATFORM_ORDER: tuple[str, ...] = (
     "weixin",
     "qqbot",
     "yuanbao",
+    "line",
+    "teams",
+    "microsoft_teams",
     "outlook",
     "api_server",
     "webhook",

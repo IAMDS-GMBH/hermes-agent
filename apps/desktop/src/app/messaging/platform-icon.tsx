@@ -17,14 +17,8 @@ import type { ComponentType, SVGProps } from 'react'
 import { Globe, Link as LinkIcon, MessageSquareText } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
-// We render simpleicons.org brand glyphs for platforms whose owners publish a
-// usable mark (telegram, discord, matrix, ...). A few brands — Slack, Dingtalk,
-// Feishu, WeCom — have been removed from Simple Icons at the brand owner's
-// request, so we fall back to a colored letter monogram for those.
-//
-// `iconColor` is the brand's hex from simpleicons.org so we can paint each
-// glyph in its native color on top of a soft tint. The fallback monogram uses
-// the same hex to keep visual consistency.
+// We prefer simpleicons.org glyphs when available. For providers that need a
+// packaged custom mark, we load an SVG from /public/messaging-icons/.
 type IconKind = 'brand' | 'generic'
 
 interface PlatformIconSpec {
@@ -32,13 +26,13 @@ interface PlatformIconSpec {
   color: string
   kind: IconKind
   monogram?: string
+  svgPath?: string
 }
 
 const PLATFORM_ICONS: Record<string, PlatformIconSpec> = {
   telegram: { Icon: SiTelegram, color: '#26A5E4', kind: 'brand' },
   discord: { Icon: SiDiscord, color: '#5865F2', kind: 'brand' },
-  // Slack removed from Simple Icons by Salesforce request — letter monogram.
-  slack: { color: '#4A154B', kind: 'brand', monogram: 'S' },
+  slack: { color: '#4A154B', kind: 'brand', svgPath: '/messaging-icons/slack.svg' },
   mattermost: { Icon: SiMattermost, color: '#0058CC', kind: 'brand' },
   matrix: { Icon: SiMatrix, color: '#000000', kind: 'brand' },
   signal: { Icon: SiSignal, color: '#3A76F0', kind: 'brand' },
@@ -46,7 +40,10 @@ const PLATFORM_ICONS: Record<string, PlatformIconSpec> = {
   bluebubbles: { Icon: SiApple, color: '#0BD318', kind: 'brand' },
   homeassistant: { Icon: SiHomeassistant, color: '#18BCF2', kind: 'brand' },
   email: { Icon: SiGmail, color: '#EA4335', kind: 'brand' },
-  outlook: { color: '#0078D4', kind: 'brand', monogram: 'O' },
+  outlook: { color: '#0078D4', kind: 'brand', svgPath: '/messaging-icons/outlook.svg' },
+  line: { color: '#06C755', kind: 'brand', svgPath: '/messaging-icons/line.svg' },
+  teams: { color: '#6264A7', kind: 'brand', svgPath: '/messaging-icons/teams.svg' },
+  microsoft_teams: { color: '#6264A7', kind: 'brand', svgPath: '/messaging-icons/teams.svg' },
   sms: { Icon: MessageSquareText, color: '#F43F5E', kind: 'generic' },
   webhook: { Icon: LinkIcon, color: '#71717A', kind: 'generic' },
   api_server: { Icon: Globe, color: '#64748B', kind: 'generic' },
@@ -77,7 +74,7 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
     )
   }
 
-  const { Icon, color } = spec
+  const { Icon, color, svgPath } = spec
 
   return (
     <span
@@ -90,7 +87,13 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
         color
       }}
     >
-      {Icon ? <Icon className="size-3.5" /> : spec.monogram || platformName.charAt(0).toUpperCase()}
+      {Icon ? (
+        <Icon className="size-3.5" />
+      ) : svgPath ? (
+        <img alt="" className="size-3.5 object-contain" src={svgPath} />
+      ) : (
+        spec.monogram || platformName.charAt(0).toUpperCase()
+      )}
     </span>
   )
 }
