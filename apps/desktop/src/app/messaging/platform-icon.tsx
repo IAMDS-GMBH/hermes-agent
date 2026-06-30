@@ -80,7 +80,7 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
   }
 
   const { Icon, color, svgPath } = spec
-  const shouldRenderSvg = Boolean(svgPath) && !svgFailed
+  const svgSrc = svgPath ? resolvePublicAssetPath(svgPath) : null
 
   return (
     <span
@@ -95,13 +95,8 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
     >
       {Icon ? (
         <Icon className="size-3.5" />
-      ) : shouldRenderSvg ? (
-        <img
-          alt=""
-          className="size-3.5 object-contain"
-          src={resolvePublicAssetPath(svgPath)}
-          onError={() => setSvgFailed(true)}
-        />
+      ) : svgSrc && !svgFailed ? (
+        <img alt="" className="size-3.5 object-contain" src={svgSrc} onError={() => setSvgFailed(true)} />
       ) : (
         spec.monogram || platformName.charAt(0).toUpperCase()
       )}
