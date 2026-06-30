@@ -43,6 +43,15 @@ EXCLUDED_SKILL_DIRS = frozenset(
     )
 )
 
+# Bundled skills disabled across discovery surfaces (CLI + desktop Skills panel).
+# Keep the directory slug(s) here so every SKILL.md scanner that calls
+# ``is_excluded_skill_path`` automatically hides them.
+DISABLED_SKILL_DIRS = frozenset(
+    (
+        "teams-meeting-pipeline",
+    )
+)
+
 
 def is_excluded_skill_path(path) -> bool:
     """True if any component of *path* is in EXCLUDED_SKILL_DIRS.
@@ -59,7 +68,7 @@ def is_excluded_skill_path(path) -> bool:
     except AttributeError:
         from pathlib import PurePath
         parts = PurePath(str(path)).parts
-    return any(part in EXCLUDED_SKILL_DIRS for part in parts)
+    return any(part in EXCLUDED_SKILL_DIRS or part in DISABLED_SKILL_DIRS for part in parts)
 
 
 # ── Lazy YAML loader ─────────────────────────────────────────────────────

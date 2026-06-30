@@ -1,5 +1,5 @@
 ---
-name: auto_load_memory_context
+name: auto-load-memory-context
 description: "This skill ensures that memory_context is loaded automatically at the start of each session."
 version: 1.0.0
 author: Hermes Agent
@@ -26,7 +26,7 @@ To use this skill, simply include it in your Hermes configuration and ensure it 
 
 ```yaml
 skills:
-  - name: auto_load_memory_context
+  - name: auto-load-memory-context
     actions:
       - load_memory_context
 ```
