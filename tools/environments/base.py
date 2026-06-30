@@ -439,6 +439,20 @@ class BaseEnvironment(ABC):
                 f"source {_quoted_snap} >/dev/null 2>&1 || true"
             )
 
+        # Re-apply an explicit PATH prepend after sourcing the snapshot.
+        # Login-shell snapshots can reorder PATH (e.g. putting /usr/bin before
+        # a managed venv). HERMES_PATH_PREPEND is injected by environment
+        # backends that need a stable toolchain path across commands.
+        parts.append(
+            "if [ -n \"${HERMES_PATH_PREPEND:-}\" ]; then "
+            "_hermes_path=\":$PATH:\"; "
+            "_hermes_path=\"${_hermes_path//:$HERMES_PATH_PREPEND:/:}\"; "
+            "_hermes_path=\"${_hermes_path#:}\"; "
+            "_hermes_path=\"${_hermes_path%:}\"; "
+            "export PATH=\"$HERMES_PATH_PREPEND:${_hermes_path}\"; "
+            "fi"
+        )
+
         # Preserve bare ``~`` expansion, but rewrite ``~/...`` through
         # ``$HOME`` so suffixes with spaces remain a single shell word.
         quoted_cwd = self._quote_cwd_for_cd(cwd)

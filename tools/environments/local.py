@@ -7,6 +7,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -25,20 +26,36 @@ _HERMES_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 def _hermes_venv_bin_dir() -> str | None:
     """Return the Hermes installation venv's bin (or Scripts on Windows) directory.
 
-    Always probes the project-local venv first so the Hermes installation
-    interpreter wins over any externally-activated venv (VIRTUAL_ENV) or
-    conda environment that may be set in the user's shell.  Falls back to
-    VIRTUAL_ENV only when no project-local venv exists.
+    Resolution order:
+      1. The currently running interpreter's own venv Scripts/bin dir
+         (when ``sys.executable`` lives under ``.../venv/...``).
+      2. Project-local ``venv`` / ``.venv`` under ``_HERMES_PROJECT_ROOT``.
+      3. ``VIRTUAL_ENV`` fallback.
+
+    This prevents shell-global virtualenvs from hijacking terminal commands
+    when Hermes itself is running from a different venv.
     """
     scripts_subdir = "Scripts" if _IS_WINDOWS else "bin"
-    # Prefer the project-local venv unconditionally — this ensures the
-    # Hermes installation Python is used regardless of whatever the user has
-    # activated in their shell (VIRTUAL_ENV, conda, pyenv, etc.).
+    # 1) Prefer the interpreter's own venv first.
+    # Keep the non-resolved path: venv python shims/symlinks often resolve to
+    # a global base interpreter, but the original ``sys.executable`` location
+    # still encodes the active venv path.
+    exe = Path(sys.executable)
+    exe_parent = exe.parent
+    if (
+        exe_parent.name == scripts_subdir
+        and exe_parent.parent.name in {"venv", ".venv"}
+        and exe_parent.is_dir()
+    ):
+        return str(exe_parent)
+
+    # 2) Fall back to well-known venv locations under the project root.
     for venv_name in ("venv", ".venv"):
         candidate = _HERMES_PROJECT_ROOT / venv_name / scripts_subdir
         if candidate.is_dir():
             return str(candidate)
-    # No project venv found — honour the caller's active venv as a fallback.
+
+    # 3) No project/interpreter venv found — honour the caller's active venv.
     virtual_env = os.environ.get("VIRTUAL_ENV", "").strip()
     if virtual_env:
         candidate = Path(virtual_env) / scripts_subdir
@@ -422,6 +439,8 @@ def _make_run_env(env: dict) -> dict:
         entries = [e for e in current_path.split(os.pathsep) if e] if current_path else []
         if venv_bin not in entries:
             run_env[path_key] = os.pathsep.join([venv_bin] + entries)
+        # Preserve the preferred bin dir across sourced shell snapshots.
+        run_env["HERMES_PATH_PREPEND"] = venv_bin
 
     _inject_context_hermes_home(run_env)
 

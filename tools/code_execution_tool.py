@@ -1647,8 +1647,20 @@ def _resolve_child_python(mode: str) -> str:
         exe_names = ("python", "python3")
         subdirs = ("bin",)
 
-    # Check the Hermes installation venv first — this wins over any
-    # VIRTUAL_ENV/CONDA_PREFIX set in the user's shell environment.
+    # Prefer the currently running interpreter's venv first, when obvious.
+    # This avoids shell-global VIRTUAL_ENV hijacking when Hermes itself runs
+    # from its own managed venv.
+    _exe = Path(sys.executable)
+    _exe_parent = _exe.parent
+    if (
+        _exe_parent.name in {"bin", "Scripts"}
+        and _exe_parent.parent.name in {"venv", ".venv"}
+        and _is_usable_python(sys.executable)
+    ):
+        return sys.executable
+
+    # Then check the Hermes installation venv — this wins over any
+    # VIRTUAL_ENV/CONDA_PREFIX exported in the user's shell environment.
     _hermes_root = Path(__file__).parent.parent.resolve()
     for venv_name in ("venv", ".venv"):
         for subdir in subdirs:
