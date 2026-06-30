@@ -408,6 +408,46 @@ class TestSyncSkills:
             manifest = _read_manifest()
         assert "removed-skill" not in manifest
 
+    def test_removed_bundled_skill_dir_is_pruned_when_pristine(self, tmp_path):
+        bundled = self._setup_bundled(tmp_path)
+        skills_dir = tmp_path / "user_skills"
+        manifest_file = skills_dir / ".bundled_manifest"
+        removed_dir = skills_dir / "legacy" / "removed-skill"
+        removed_dir.mkdir(parents=True)
+        (removed_dir / "SKILL.md").write_text("---\nname: removed-skill\n---\n# Removed\n")
+        (removed_dir / "main.py").write_text("print('removed')\n")
+        removed_hash = _dir_hash(removed_dir)
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        manifest_file.write_text(f"removed-skill:{removed_hash}\n")
+
+        with self._patches(bundled, skills_dir, manifest_file):
+            sync_skills(quiet=True)
+
+        assert not removed_dir.exists()
+        with patch("tools.skills_sync.MANIFEST_FILE", manifest_file):
+            manifest = _read_manifest()
+        assert "removed-skill" not in manifest
+
+    def test_removed_bundled_skill_dir_kept_when_modified(self, tmp_path):
+        bundled = self._setup_bundled(tmp_path)
+        skills_dir = tmp_path / "user_skills"
+        manifest_file = skills_dir / ".bundled_manifest"
+        removed_dir = skills_dir / "legacy" / "removed-skill"
+        removed_dir.mkdir(parents=True)
+        (removed_dir / "SKILL.md").write_text("---\nname: removed-skill\n---\n# Removed\n")
+        origin_hash = _dir_hash(removed_dir)
+        (removed_dir / "notes.txt").write_text("user custom change\n")
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        manifest_file.write_text(f"removed-skill:{origin_hash}\n")
+
+        with self._patches(bundled, skills_dir, manifest_file):
+            sync_skills(quiet=True)
+
+        assert removed_dir.exists()
+        with patch("tools.skills_sync.MANIFEST_FILE", manifest_file):
+            manifest = _read_manifest()
+        assert "removed-skill" not in manifest
+
     def test_does_not_overwrite_existing_unmanifested_skill(self, tmp_path):
         """New skill whose name collides with user-created skill = skipped."""
         bundled = self._setup_bundled(tmp_path)

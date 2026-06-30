@@ -238,6 +238,46 @@ def _migrate_renamed_skills(manifest: Dict[str, str], *, quiet: bool = False) ->
                 manifest[new_name] = manifest[old_name]
             del manifest[old_name]
 
+
+def _discover_active_skills(skills_dir: Path) -> List[Tuple[str, Path]]:
+    """Find installed skills under the active skills tree."""
+    skills: List[Tuple[str, Path]] = []
+    if not skills_dir.exists():
+        return skills
+    for skill_md in skills_dir.rglob("SKILL.md"):
+        if is_excluded_skill_path(skill_md):
+            continue
+        skill_dir = skill_md.parent
+        try:
+            skill_dir.relative_to(skills_dir)
+        except ValueError:
+            continue
+        skills.append((_read_skill_name(skill_md, skill_dir.name), skill_dir))
+    return skills
+
+
+def _prune_removed_bundled_skill_dirs(removed_hashes: Dict[str, str], *, quiet: bool = False) -> None:
+    """Remove pristine local copies of bundled skills removed upstream.
+
+    Only removes directories whose frontmatter skill name matches a removed
+    bundled entry AND whose current hash still matches the tracked origin hash.
+    Modified or untracked local skills are preserved.
+    """
+    if not removed_hashes:
+        return
+    for skill_name, skill_dir in _discover_active_skills(SKILLS_DIR):
+        origin_hash = removed_hashes.get(skill_name)
+        if not origin_hash:
+            continue
+        if _dir_hash(skill_dir) != origin_hash:
+            continue
+        try:
+            _rmtree_writable(skill_dir)
+            if not quiet:
+                print(f"  - pruned removed bundled skill {skill_name}")
+        except (OSError, IOError) as e:
+            logger.debug("Could not prune removed bundled skill %s at %s: %s", skill_name, skill_dir, e, exc_info=True)
+
 def _compute_relative_dest(skill_dir: Path, bundled_dir: Path) -> Path:
     """
     Compute the destination path in SKILLS_DIR preserving the category structure.
@@ -646,6 +686,8 @@ def sync_skills(quiet: bool = False) -> dict:
 
     # Clean stale manifest entries (skills removed from bundled dir)
     cleaned = sorted(set(manifest.keys()) - bundled_names)
+    cleaned_hashes = {name: manifest.get(name, "") for name in cleaned}
+    _prune_removed_bundled_skill_dirs(cleaned_hashes, quiet=quiet)
     for name in cleaned:
         del manifest[name]
 
