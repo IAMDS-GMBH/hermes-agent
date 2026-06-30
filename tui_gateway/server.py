@@ -9832,7 +9832,11 @@ def _(rid, params: dict) -> dict:
 
 @method("litellm_hub.agent_activate")
 def _(rid, params: dict) -> dict:
-    """Activate an agent by name so it becomes callable as a subagent."""
+    """Activate an agent by name so it becomes callable as a subagent.
+
+    Also auto-enables the 'litellm_agents' toolset on first activation so
+    the LiteLLM Agents (A2A) tools are immediately available.
+    """
     try:
         from agent.litellm_hub_client import get_active_agents, set_active_agents
         from tools.registry import invalidate_check_fn_cache
@@ -9843,6 +9847,22 @@ def _(rid, params: dict) -> dict:
         if agent_name not in current:
             set_active_agents(current + [agent_name])
         invalidate_check_fn_cache()
+
+        # Auto-enable the LiteLLM Agents (A2A) toolset whenever at least one
+        # agent is active, so the tools become available without a manual step.
+        try:
+            from hermes_cli.config import load_config, save_config
+            from hermes_cli.tools_config import _apply_toolset_change, _get_platform_tools
+            cfg = load_config()
+            if "litellm_agents" not in _get_platform_tools(cfg, "cli", include_default_mcp_servers=False):
+                _apply_toolset_change(cfg, "cli", ["litellm_agents"], "enable")
+                save_config(cfg)
+                session = _sessions.get(params.get("session_id", ""))
+                if session:
+                    _reset_session_agent(params.get("session_id", ""), session)
+        except Exception as toolset_err:
+            logger.warning("[litellm_hub] Could not auto-enable litellm_agents toolset: %s", toolset_err)
+
         return _ok(rid, {"active_agents": get_active_agents()})
     except Exception as e:
         return _err(rid, 5037, str(e))

@@ -47,6 +47,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
 ] }
 
+# Pin time to avoid cookie 0.18.1 incompatibility with time >= 0.3.52
+# (time 0.3.52 changed the Parsable::parse signature, breaking cookie 0.18.1)
+time = ">=0.3, <0.3.52"
+
 # Logging — emitted to a file under HERMES_HOME/logs/ and (optionally) the
 # webview console via Tauri's event channel.
 tracing = "0.1"
