@@ -64,6 +64,115 @@ hermes doctor       # Diagnose any issues
 
 ---
 
+## Desktop App
+
+### Changing the model
+
+Click the model name in the bottom-right status bar to open the model selector. Choose from the available models provided by your IAMDS instance, then close the dropdown — the change takes effect immediately.
+
+<p align="center">
+  <img src="assets/desktop-model-selector.png" alt="Model selector dropdown" width="85%">
+</p>
+
+---
+
+### Skills & Tools
+
+Open **Skills & Tools** in the left sidebar to enable or disable individual skills. Skills are grouped by category. Toggle the switch on the right of each skill to activate or deactivate it.
+
+<p align="center">
+  <img src="assets/desktop-skills-tools.png" alt="Skills and Tools panel" width="85%">
+</p>
+
+#### Available skills
+
+**AIMDS Custom**
+
+| Skill | Description |
+|---|---|
+| `auto-load-memory-context` | Automatically loads memory context at the start of each session. |
+| `deep-research` | Researches a question across multiple sources, cross-checks claims, and delivers a concise, cited synthesis. Triggered by "research", "find out", or market/competitor intelligence requests. |
+| `digest` | Creates a recurring daily or weekly summary from calendar, inbox, and open tasks. Usable as a cron blueprint (morning-brief / weekly-digest). |
+| `doc-draft` | Creates documents, presentations, and spreadsheets (Word/PPTX/XLSX) from company templates. Use for "create a proposal/minutes/deck/spreadsheet". |
+| `doc-review` | Reviews a document or contract and provides structured findings (risks, gaps, inconsistencies, to-dos). |
+| `email-triage` | Organises the inbox, clusters by urgency, extracts tasks, and prepares response drafts. Never sends directly. Use for "clean up inbox", "what is important", "prepare a reply". |
+| `kb-lookup` | Answers company-knowledge questions (policies, processes, templates) from the AIMDS knowledge base with cited sources. |
+
+**Apple**
+
+| Skill | Description |
+|---|---|
+| `apple-notes` | Manage Apple Notes: create, search, edit. |
+| `apple-reminders` | Apple Reminders: add, list, complete. |
+| `findmy` | Track Apple devices/AirTags via FindMy.app on macOS. |
+| `imessage` | Send and receive iMessages/SMS on macOS. |
+| `macos-computer-use` | Drive the macOS desktop: screenshots, mouse, keyboard. |
+
+**Creative**
+
+| Skill | Description |
+|---|---|
+| `architecture-diagram` | Dark-themed SVG architecture/cloud/infra diagrams as HTML. |
+| `ascii-art` | ASCII art via pyfiglet, cowsay, boxes, image-to-ascii. |
+| `claude-design` | Design one-off HTML artifacts (landing pages, decks, prototypes). |
+| `excalidraw` | Hand-drawn Excalidraw JSON diagrams (architecture, flow, sequence). |
+| `humanizer` | Humanize text: strip AI-isms and add real voice. |
+| `manim-video` | Manim CE animations (3Blue1Brown-style math/algo videos). |
+| `p5js` | p5.js sketches: generative art, shaders, interactive, 3D. |
+| `sketch` | Throwaway HTML mockups: 2–3 design variants to compare. |
+| `songwriting-and-ai-music` | Songwriting craft and Suno AI music prompts. |
+
+**Media**
+
+| Skill | Description |
+|---|---|
+| `gif-search` | Search/download GIFs from Tenor. |
+| `youtube-content` | Convert YouTube transcripts to summaries, threads, blog posts. |
+| `songsee` | Audio spectrograms and features (mel, chroma, MFCC). |
+
+**Note-Taking**
+
+| Skill | Description |
+|---|---|
+| `obsidian` | Read, search, create, and edit notes in an Obsidian vault. |
+
+**Productivity**
+
+| Skill | Description |
+|---|---|
+| `airtable` | Airtable REST API: records CRUD, filters, upserts. |
+| `google-workspace` | Gmail, Calendar, Drive, Docs, Sheets. |
+| `maps` | Geocode, POIs, routes, timezones via OpenStreetMap/OSRM. |
+| `nano-pdf` | Edit PDF text, typos, and titles via natural language. |
+| `notion` | Notion API: pages, databases, markdown. |
+| `ocr-and-documents` | Extract text from PDFs and scanned documents. |
+| `powerpoint` | Create, read, and edit .pptx decks, slides, and notes. |
+| `teams-meeting-pipeline` | Summarise Teams meetings, inspect pipeline status, manage Graph subscriptions. |
+
+**Research**
+
+| Skill | Description |
+|---|---|
+| `arxiv` | Search arXiv papers by keyword, author, category, or ID. |
+| `blogwatcher` | Monitor blogs and RSS/Atom feeds. |
+| `llm-wiki` | Build and query an interlinked markdown knowledge base. |
+| `polymarket` | Query Polymarket: markets, prices, orderbooks, history. |
+| `research-paper-writing` | Write ML papers for NeurIPS/ICML/ICLR. |
+
+---
+
+### Messaging — Outlook
+
+Open **Messaging** in the left sidebar and select **Outlook** to configure the Microsoft Outlook integration. Enter your **Azure AD Tenant ID** and **Application (Client) ID**, then use the **Test** button to complete device flow authentication.
+
+<p align="center">
+  <img src="assets/desktop-messaging-outlook.png" alt="Messaging — Outlook configuration" width="85%">
+</p>
+
+For full setup instructions including Azure app registration, required permissions, and admin consent steps, see [docs/messaging/outlook-setup.md](docs/messaging/outlook-setup.md).
+
+---
+
 ## CLI vs Messaging Quick Reference
 
 Hermes has two entry points: start the terminal UI with `hermes`, or run the gateway and talk to it from Telegram, Discord, Slack, WhatsApp, or Outlook. Once you're in a conversation, many slash commands are shared across both interfaces.

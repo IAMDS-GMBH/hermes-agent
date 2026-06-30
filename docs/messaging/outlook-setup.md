@@ -95,10 +95,14 @@ These do **not** need to be kept secret (unlike a client secret). They identify 
 
 ### Desktop app
 
-1. Open Hermes → **Messaging** section.
-2. Find **Outlook** and click the settings icon.
+1. Open Hermes → **Messaging** section in the left sidebar.
+2. Select **Outlook** from the platform list.
 3. Enter the **Tenant ID** and **Client ID** provided by your app developer/admin.
-4. Save the configuration.
+4. Click **Save changes**.
+
+<p align="center">
+  <img src="../../assets/desktop-messaging-outlook.png" alt="Outlook messaging configuration panel" width="85%">
+</p>
 
 ### CLI / `.env`
 
