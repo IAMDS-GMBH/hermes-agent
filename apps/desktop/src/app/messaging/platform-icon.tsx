@@ -12,7 +12,7 @@ import {
   SiWechat,
   SiWhatsapp
 } from '@icons-pack/react-simple-icons'
-import type { ComponentType, SVGProps } from 'react'
+import { useState, type ComponentType, type SVGProps } from 'react'
 
 import { Globe, Link as LinkIcon, MessageSquareText } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -43,7 +43,6 @@ const PLATFORM_ICONS: Record<string, PlatformIconSpec> = {
   outlook: { color: '#0078D4', kind: 'brand', svgPath: '/messaging-icons/outlook.svg' },
   line: { color: '#06C755', kind: 'brand', svgPath: '/messaging-icons/line.svg' },
   teams: { color: '#6264A7', kind: 'brand', svgPath: '/messaging-icons/teams.svg' },
-  microsoft_teams: { color: '#6264A7', kind: 'brand', svgPath: '/messaging-icons/teams.svg' },
   sms: { Icon: MessageSquareText, color: '#F43F5E', kind: 'generic' },
   webhook: { Icon: LinkIcon, color: '#71717A', kind: 'generic' },
   api_server: { Icon: Globe, color: '#64748B', kind: 'generic' },
@@ -58,8 +57,14 @@ interface PlatformAvatarProps {
   className?: string
 }
 
+function resolvePublicAssetPath(path: string): string {
+  const rel = path.replace(/^\/+/, '')
+  return `${import.meta.env.BASE_URL}${rel}`
+}
+
 export function PlatformAvatar({ className, platformId, platformName }: PlatformAvatarProps) {
   const spec = PLATFORM_ICONS[platformId]
+  const [svgFailed, setSvgFailed] = useState(false)
 
   const baseClass = cn(
     'inline-grid size-6 shrink-0 place-items-center rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
@@ -75,6 +80,7 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
   }
 
   const { Icon, color, svgPath } = spec
+  const shouldRenderSvg = Boolean(svgPath) && !svgFailed
 
   return (
     <span
@@ -89,8 +95,13 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
     >
       {Icon ? (
         <Icon className="size-3.5" />
-      ) : svgPath ? (
-        <img alt="" className="size-3.5 object-contain" src={svgPath} />
+      ) : shouldRenderSvg ? (
+        <img
+          alt=""
+          className="size-3.5 object-contain"
+          src={resolvePublicAssetPath(svgPath)}
+          onError={() => setSvgFailed(true)}
+        />
       ) : (
         spec.monogram || platformName.charAt(0).toUpperCase()
       )}

@@ -3529,10 +3529,7 @@ _PLATFORM_OVERRIDES: dict[str, dict[str, Any]] = {
         ),
     },
     "teams": {
-        "name": "Microsoft Teams",
-    },
-    "microsoft_teams": {
-        "name": "Microsoft Teams",
+        "name": "Teams",
     },
     "line": {
         "name": "LINE",
@@ -3582,7 +3579,6 @@ _PLATFORM_ORDER: tuple[str, ...] = (
     "yuanbao",
     "line",
     "teams",
-    "microsoft_teams",
     "outlook",
     "api_server",
     "webhook",
