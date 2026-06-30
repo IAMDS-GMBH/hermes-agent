@@ -1751,7 +1751,15 @@ function Ensure-OfficeDocumentDependencies {
         @{ Import = "docx";      Spec = "python-docx>=1,<2";           Label = "Word (.docx)" },
         @{ Import = "pptx";      Spec = "python-pptx>=1,<2";           Label = "PowerPoint (.pptx)" },
         @{ Import = "markitdown";Spec = "markitdown[pptx]>=0.1,<1";    Label = "Office text extraction" },
-        @{ Import = "PIL";       Spec = "Pillow>=10,<12";              Label = "PowerPoint thumbnails" }
+        @{ Import = "PIL";       Spec = "Pillow>=10,<12";              Label = "PowerPoint thumbnails" },
+        @{ Import = "openpyxl";  Spec = "openpyxl>=3,<4";              Label = "Excel workbook processing" },
+        @{ Import = "pandas";    Spec = "pandas>=2,<3";                Label = "Spreadsheet/tabular conversion" },
+        @{ Import = "pypdf";     Spec = "pypdf>=5,<6";                 Label = "PDF merge/split/manipulation" },
+        @{ Import = "fitz";      Spec = "pymupdf>=1.24,<2";            Label = "PDF metadata/inspection" },
+        @{ Import = "fpdf";      Spec = "fpdf2>=2.8,<3";               Label = "Word/PDF text rendering fallback" },
+        @{ Import = "weasyprint";Spec = "weasyprint>=62,<63";          Label = "HTML to PDF conversion" },
+        @{ Import = "cairosvg";  Spec = "cairosvg>=2.7,<3";            Label = "SVG conversion" },
+        @{ Import = "pillow_heif";Spec = "pillow-heif>=0.16,<1";       Label = "HEIC image conversion" }
     )
 
     foreach ($dep in $deps) {

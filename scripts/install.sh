@@ -1579,7 +1579,15 @@ ensure_office_document_dependencies() {
         "docx|python-docx>=1,<2|Word (.docx)" \
         "pptx|python-pptx>=1,<2|PowerPoint (.pptx)" \
         "markitdown|markitdown[pptx]>=0.1,<1|Office text extraction" \
-        "PIL|Pillow>=10,<12|PowerPoint thumbnails"; do
+        "PIL|Pillow>=10,<12|PowerPoint thumbnails" \
+        "openpyxl|openpyxl>=3,<4|Excel workbook processing" \
+        "pandas|pandas>=2,<3|Spreadsheet/tabular conversion" \
+        "pypdf|pypdf>=5,<6|PDF merge/split/manipulation" \
+        "fitz|pymupdf>=1.24,<2|PDF metadata/inspection" \
+        "fpdf|fpdf2>=2.8,<3|Word/PDF text rendering fallback" \
+        "weasyprint|weasyprint>=62,<63|HTML to PDF conversion" \
+        "cairosvg|cairosvg>=2.7,<3|SVG conversion" \
+        "pillow_heif|pillow-heif>=0.16,<1|HEIC image conversion"; do
         IFS='|' read -r import_name spec label <<< "$entry"
         if ! "$python_exe" -c "import ${import_name}" >/dev/null 2>&1; then
             missing=true
