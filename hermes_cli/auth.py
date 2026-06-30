@@ -180,6 +180,13 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         auth_type="oauth_external",
         inference_base_url=DEFAULT_CODEX_BASE_URL,
     ),
+    "iamds-litellm": ProviderConfig(
+        id="iamds-litellm",
+        name="IAMDS LiteLLM",
+        auth_type="api_key",
+        api_key_env_vars=("IAMDS_LITELLM_API_KEY",),
+        base_url_env_var="OPENAI_BASE_URL",
+    ),
     "openai-api": ProviderConfig(
         id="openai-api",
         name="OpenAI API",

@@ -14,7 +14,7 @@ export const PROVIDER_VIEWS = ['accounts', 'keys'] as const
 export type ProviderView = (typeof PROVIDER_VIEWS)[number]
 
 function buildIamdsLiteLlmKeyGroup(vars: Record<string, EnvVarInfo>): ProviderKeyGroup[] {
-  const key = 'OPENAI_API_KEY'
+  const key = 'IAMDS_LITELLM_API_KEY'
   const info = vars[key]
 
   if (!info) {

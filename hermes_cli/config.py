@@ -2544,7 +2544,7 @@ REQUIRED_ENV_VARS = {}
 # Optional environment variables that enhance functionality
 OPTIONAL_ENV_VARS = {
     # ── Provider (handled in provider selection, not shown in checklists) ──
-    "OPENAI_API_KEY": {
+    "IAMDS_LITELLM_API_KEY": {
         "description": "IAMDS LiteLLM API key",
         "prompt": "IAMDS LiteLLM API key",
         "url": None,

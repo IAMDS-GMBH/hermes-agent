@@ -2258,7 +2258,7 @@ function Apply-BootstrapCredentials {
             # Exact 2-space prefix so only model-section keys are replaced here.
             # skills.litellm_hub.base_url (4-space) is handled separately in
             # Ensure-BootstrapToolConfig which reads HERMES_BOOTSTRAP_BASE_URL directly.
-            $config = $config -replace '(?m)^  provider:.*$', '  provider: openai-api'
+            $config = $config -replace '(?m)^  provider:.*$', '  provider: iamds-litellm'
             $escapedUrl = $llmGatewayUrl -replace '([\\])', '$1$1' # Escape backslashes for regex
             $config = $config -replace '(?m)^  base_url:.*$', "  base_url: $escapedUrl"
 
@@ -2300,9 +2300,9 @@ function Apply-BootstrapCredentials {
     if ((Test-Path $envPath) -and (-not [string]::IsNullOrWhiteSpace($bootstrapApiKey))) {
         $envLines = @(
             "# Added by bootstrap installer"
-            "OPENAI_API_KEY=$bootstrapApiKey"
+            "IAMDS_LITELLM_API_KEY=$bootstrapApiKey"
         )
-        # OPENAI_BASE_URL drives openai-api model discovery/runtime routing.
+        # OPENAI_BASE_URL drives iamds-litellm model discovery/runtime routing.
         # Without this, picker discovery falls back to api.openai.com.
         if (-not [string]::IsNullOrWhiteSpace($llmGatewayUrl)) {
             $envLines += "OPENAI_BASE_URL=$llmGatewayUrl"
@@ -2314,7 +2314,7 @@ function Apply-BootstrapCredentials {
         [System.IO.File]::AppendAllText($envPath, $envContent, $utf8NoBom)
         Write-Success "Configured $envPath with bootstrap API key/base URL"
     } elseif ([string]::IsNullOrWhiteSpace($bootstrapApiKey)) {
-        Write-Info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in $envPath"
+        Write-Info "Bootstrap API key not provided; keeping existing IAMDS_LITELLM_API_KEY in $envPath"
     }
 
     # Never patch core Python sources from installer credentials anymore.

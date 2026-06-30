@@ -1298,7 +1298,7 @@ def list_authenticated_providers(
     _current_base_norm = _norm_url(current_base_url)
     _openai_provider_cfg_base = ""
     if isinstance(user_providers, dict):
-        _openai_cfg = user_providers.get("openai-api")
+        _openai_cfg = user_providers.get("iamds-litellm") or user_providers.get("openai-api")
         if isinstance(_openai_cfg, dict):
             _openai_provider_cfg_base = str(_openai_cfg.get("base_url") or "").strip()
     try:
@@ -1316,7 +1316,7 @@ def list_authenticated_providers(
         base and (base.endswith("/litellm/v1") or "/litellm/" in base)
         for base in _litellm_base_candidates
     )
-    _bootstrap_litellm_mode = _provider_norm in {"", "auto", "openai-api"} and _litellm_gateway_configured
+    _bootstrap_litellm_mode = _provider_norm in {"", "auto", "openai-api", "iamds-litellm"} and _litellm_gateway_configured
 
     data = fetch_models_dev()
 

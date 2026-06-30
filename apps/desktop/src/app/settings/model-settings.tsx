@@ -136,7 +136,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   }, [refresh])
 
   const providerOptions = providers.length
-    ? providers.filter(p => p.slug === 'openai-api')
+    ? providers.filter(p => p.slug === 'iamds-litellm')
     : NO_PROVIDERS
 
   const selectedProviderRow = useMemo(

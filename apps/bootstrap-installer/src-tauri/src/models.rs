@@ -80,9 +80,9 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 ///
 /// Updates `~/.hermes/provider_models_cache.json` while preserving unrelated
 /// provider cache entries (so reinstall does not wipe prior discovery state).
-/// The installer pins both `openai-api` and `openai` to the fetched list and
-/// removes Copilot cache entries to keep the picker aligned with the bootstrap
-/// LiteLLM endpoint.
+/// The installer pins `iamds-litellm`, `openai-api` and `openai` to the fetched
+/// list and removes Copilot cache entries to keep the picker aligned with the
+/// bootstrap LiteLLM endpoint.
 #[tauri::command]
 pub async fn write_provider_models_cache(
     hermes_home: Option<String>,
@@ -128,6 +128,10 @@ pub async fn write_provider_models_cache(
     };
 
     providers.insert(
+        "iamds-litellm".to_string(),
+        pinned_entry.clone(),
+    );
+    providers.insert(
         "openai-api".to_string(),
         pinned_entry.clone(),
     );
@@ -137,7 +141,7 @@ pub async fn write_provider_models_cache(
     );
 
     let model_count = providers
-        .get("openai-api")
+        .get("iamds-litellm")
         .map(|entry| entry.models.len())
         .unwrap_or(0);
     let cache = ProviderModelsCache { providers };
@@ -150,7 +154,7 @@ pub async fn write_provider_models_cache(
         .map_err(|e| format!("Failed to write cache file: {}", e))?;
 
     tracing::info!(
-        "Wrote provider models cache to: {} (pinned openai/openai-api, {} models)",
+        "Wrote provider models cache to: {} (pinned iamds-litellm/openai/openai-api, {} models)",
         cache_file.display(),
         model_count
     );

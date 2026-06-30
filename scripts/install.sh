@@ -1791,7 +1791,7 @@ apply_bootstrap_credentials() {
                 mcp_server_url="${HERMES_BOOTSTRAP_MEMORY_API_URL%/}"
             fi
 
-            sed -i.bak 's/^  provider: .*/  provider: openai-api/' "$HERMES_HOME/config.yaml" || true
+            sed -i.bak 's/^  provider: .*/  provider: iamds-litellm/' "$HERMES_HOME/config.yaml" || true
             # Escape URL for sed (forward slashes need escaping)
             escaped_url=$(printf '%s\n' "${llm_gateway_url}" | sed 's/[\/&]/\\&/g')
             sed -i.bak "s|  base_url: .*|  base_url: ${escaped_url}|" "$HERMES_HOME/config.yaml" || true
@@ -1868,8 +1868,8 @@ PYEOF
         # Write API key
         {
             echo "# Added by bootstrap installer"
-            echo "OPENAI_API_KEY=${HERMES_BOOTSTRAP_API_KEY}"
-            # OPENAI_BASE_URL drives openai-api model discovery/runtime routing.
+            echo "IAMDS_LITELLM_API_KEY=${HERMES_BOOTSTRAP_API_KEY}"
+            # OPENAI_BASE_URL drives iamds-litellm model discovery/runtime routing.
             # Without this, picker discovery falls back to api.openai.com.
             if [ -n "${llm_gateway_url:-}" ]; then
                 echo "OPENAI_BASE_URL=${llm_gateway_url}"
@@ -1878,7 +1878,7 @@ PYEOF
 
         log_success "Configured .env with bootstrap API key/base URL"
     elif [ -z "${HERMES_BOOTSTRAP_API_KEY:-}" ]; then
-        log_info "Bootstrap API key not provided; keeping existing OPENAI_API_KEY in ~/.hermes/.env"
+        log_info "Bootstrap API key not provided; keeping existing IAMDS_LITELLM_API_KEY in ~/.hermes/.env"
     fi
 }
 
