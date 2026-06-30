@@ -83,7 +83,13 @@ jobs:
             }
           }
 
-          cargo fetch --manifest-path apps/bootstrap-installer/src-tauri/Cargo.toml --locked
+          $manifest = "apps/bootstrap-installer/src-tauri/Cargo.toml"
+          $lockfile = "apps/bootstrap-installer/src-tauri/Cargo.lock"
+          if (Test-Path $lockfile) {
+            cargo fetch --manifest-path $manifest --locked
+          } else {
+            cargo fetch --manifest-path $manifest
+          }
 
       - name: Validate install.ps1 syntax
         shell: pwsh
