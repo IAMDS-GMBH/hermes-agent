@@ -5,7 +5,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Globe, Info, KeyRound, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import { Archive, Globe, Info, KeyRound, Sparkles, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -45,11 +45,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
     setProviderView(view)
-  }
-
-  const openKeysView = (view: KeysView) => {
-    setActiveView('keys')
-    setKeysView(view)
   }
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -132,30 +127,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             label={t.settings.nav.gateway}
             onClick={() => setActiveView('gateway')}
           />
-          <OverlayNavItem
-            active={activeView === 'keys'}
-            icon={KeyRound}
-            label={t.settings.nav.apiKeys}
-            onClick={() => setActiveView('keys')}
-          />
-          {activeView === 'keys' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
-              <OverlayNavItem
-                active={keysView === 'tools'}
-                icon={Wrench}
-                label={t.settings.nav.keysTools}
-                nested
-                onClick={() => openKeysView('tools')}
-              />
-              <OverlayNavItem
-                active={keysView === 'settings'}
-                icon={Settings2}
-                label={t.settings.nav.keysSettings}
-                nested
-                onClick={() => openKeysView('settings')}
-              />
-            </div>
-          )}
           <OverlayNavItem
             active={activeView === 'mcp'}
             icon={Wrench}
