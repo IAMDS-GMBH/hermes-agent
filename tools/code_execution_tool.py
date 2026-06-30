@@ -42,6 +42,7 @@ import tempfile
 import threading
 import time
 import uuid
+from pathlib import Path
 
 _IS_WINDOWS = platform.system() == "Windows"
 from typing import Any, Dict, List, Optional
@@ -1664,6 +1665,17 @@ def _resolve_child_python(mode: str) -> str:
                     "Using sys.executable instead.", var, candidate,
                 )
                 return sys.executable
+
+    # No VIRTUAL_ENV / CONDA_PREFIX — check the Hermes installation venv so
+    # project-mode executions use the same interpreter as the gateway itself.
+    _hermes_root = Path(__file__).parent.parent.resolve()
+    for venv_name in ("venv", ".venv"):
+        for subdir in subdirs:
+            for exe in exe_names:
+                candidate = str(_hermes_root / venv_name / subdir / exe)
+                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                    if _is_usable_python(candidate):
+                        return candidate
 
     return sys.executable
 
