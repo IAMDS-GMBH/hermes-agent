@@ -2633,10 +2633,6 @@ You are Hermes, an AI agent originally developed by Nous Research and extended a
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path "$HermesHome\skills" $blockedSkillDir)
     }
 
-    # Legacy bundled-skill rename cleanup: remove pre-kebab slug left from
-    # older installs so it doesn't remain visible after reinstall/update.
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path "$HermesHome\skills" "aimds_custom\auto_load_memory_context")
-
     # Apply bootstrap credentials if provided by the installer UI
     Apply-BootstrapCredentials
 }
