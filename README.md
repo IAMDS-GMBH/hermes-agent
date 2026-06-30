@@ -23,36 +23,29 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 
 ---
 
-## Quick Install
+## Install
 
-Download the installer for your platform from the link provided by your IAMDS contact. The URL follows this pattern:
+Download the **Hermes installer** (`.dmg` on macOS, `.exe` on Windows) from the link provided by your IAMDS contact.
 
-```
-<base-url>/install?key=<your-personal-api-key>
-```
+**1. Welcome screen** — click **Install Hermes** to begin. The installer sets everything up in the background.
 
-### macOS / Linux
+<p align="center">
+  <img src="assets/installer-welcome.png" alt="Installer welcome screen" width="75%">
+</p>
 
-Open a terminal and run the provided install command:
+**2. Configuration** — enter your **Base URL** and **API Key** (provided by your IAMDS administrator), then click **Fetch Models** to load the available models.
 
-```bash
-curl -fsSL "<base-url>/install.sh?key=<your-personal-api-key>" | bash
-```
+<p align="center">
+  <img src="assets/installer-configuration.png" alt="Installer configuration screen" width="75%">
+</p>
 
-### Windows (PowerShell)
+**3. Select model and install** — choose a model from the dropdown (or leave it on **Auto**), then click **Install Hermes** to complete the setup.
 
-```powershell
-iex (irm "<base-url>/install.ps1?key=<your-personal-api-key>")
-```
+<p align="center">
+  <img src="assets/installer-configuration-fetched.png" alt="Installer configuration with models fetched" width="75%">
+</p>
 
-Your personal API key is required — the installer uses it to authenticate and configure your instance. Contact your IAMDS administrator if you have not received one.
-
-After installation:
-
-```bash
-source ~/.bashrc    # reload shell (or: source ~/.zshrc)
-hermes              # start chatting!
-```
+The installer handles everything automatically: Python environment, Node.js, dependencies, and the desktop app.
 
 ---
 
