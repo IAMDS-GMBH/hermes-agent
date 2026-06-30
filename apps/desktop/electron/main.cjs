@@ -2031,6 +2031,27 @@ function isPackagedInstallPath(dir) {
   })
 }
 
+function resolveTerminalCwdFromConfig() {
+  // Read terminal.cwd from ~/.hermes/config.yaml without a full YAML parser.
+  // Returns null if unset, empty, or the sentinel values used for "use default".
+  try {
+    const configPath = path.join(HERMES_HOME, 'config.yaml')
+    // Normalise CRLF → LF so the regexes work on Windows-edited files too.
+    const raw = fs.readFileSync(configPath, 'utf8').replace(/\r\n/g, '\n')
+    // Match `cwd:` indented under a `terminal:` block.
+    const terminalBlock = raw.match(/^terminal\s*:\s*\n((?:[ \t]+.+\n?)*)/)
+    if (!terminalBlock) return null
+    const cwdLine = terminalBlock[1].match(/^[ \t]+cwd\s*:\s*(.+)$/m)
+    if (!cwdLine) return null
+    const val = cwdLine[1].trim().replace(/^['"]|['"]$/g, '')
+    if (!val || val === '.' || val === 'auto' || val === 'cwd') return null
+    const resolved = path.resolve(val.startsWith('~') ? val.replace('~', app.getPath('home')) : val)
+    return directoryExists(resolved) ? resolved : null
+  } catch {
+    return null
+  }
+}
+
 function resolveHermesCwd() {
   // In a packaged build, `process.cwd()` resolves to the install root (e.g.
   // `…/win-unpacked` on Windows or `/Applications/Hermes.app/Contents/...`
@@ -2041,6 +2062,7 @@ function resolveHermesCwd() {
   // real directory), then the home dir.
   const candidates = [
     readDefaultProjectDir(),
+    resolveTerminalCwdFromConfig(),
     process.env.HERMES_DESKTOP_CWD,
     IS_PACKAGED ? null : process.env.INIT_CWD,
     IS_PACKAGED ? null : process.cwd(),
@@ -6118,6 +6140,15 @@ ipcMain.handle('hermes:vscode-theme:fetch', async (_event, id) => fetchMarketpla
 ipcMain.handle('hermes:vscode-theme:search', async (_event, query) => searchMarketplaceThemes(String(query || ''), 20))
 
 app.whenReady().then(() => {
+  // Seed the default project directory from terminal.cwd in config.yaml on
+  // first launch so the UI shows it as explicitly set rather than "Not set".
+  if (!readDefaultProjectDir()) {
+    const configCwd = resolveTerminalCwdFromConfig()
+    if (configCwd) {
+      writeDefaultProjectDir(configCwd)
+    }
+  }
+
   if (IS_MAC) {
     Menu.setApplicationMenu(buildApplicationMenu())
   } else {
