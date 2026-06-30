@@ -135,7 +135,9 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     void refresh()
   }, [refresh])
 
-  const providerOptions = providers.length ? providers : NO_PROVIDERS
+  const providerOptions = providers.length
+    ? providers.filter(p => p.slug === 'openai-api')
+    : NO_PROVIDERS
 
   const selectedProviderRow = useMemo(
     () => providers.find(provider => provider.slug === selectedProvider),
