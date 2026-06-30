@@ -42,6 +42,7 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
         base_url = base_url[:-3]
     api_key = str(
         hub_cfg.get("api_key")
+        or os.getenv("IAMDS_LITELLM_API_KEY")
         or os.getenv("LITELLM_KEY")
         or os.getenv("OPENAI_API_KEY")
         or _first_provider_api_key(cfg)
@@ -119,8 +120,11 @@ def fetch_litellm_hub_json(
         headers["Authorization"] = f"Bearer {api_key}"
 
     public_endpoint = _HUB_PATH_ALIASES.get(public_path.strip("/"), public_path.strip("/"))
-    # Strip trailing /litellm if present to avoid double path segment
+    # Strip /v1 suffix (may be present when settings are passed directly, bypassing
+    # resolve_litellm_hub_settings which normally strips it).
     hub_base = base_url.rstrip("/")
+    if hub_base.endswith("/v1"):
+        hub_base = hub_base[:-3]
     if hub_base.endswith("/litellm"):
         url = f"{hub_base}/public/{public_endpoint}"
     else:
@@ -154,13 +158,27 @@ def fetch_litellm_hub_json(
         return None, f"LiteLLM hub returned non-JSON response from {url}."
 
 
+def _parse_agents_response(data: Any) -> list:
+    """Normalise a LiteLLM agents response into a plain list."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("data") or data.get("agents") or []
+    return []
+
+
 def fetch_litellm_agents(
     settings: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Optional[list], Optional[str]]:
-    """Fetch agents from the LiteLLM ``/v1/agents`` endpoint.
+    """Fetch agents from the LiteLLM agent hub.
 
-    Returns (agents_list, error_message).  The agents list items contain at
-    minimum ``agent_id`` / ``agent_name`` fields as returned by LiteLLM.
+    Strategy:
+      1. Try ``litellm/public/agent_hub`` without authentication (public endpoint).
+      2. On any non-2xx response (including 500) or network error, fall back to
+         ``litellm/v1/agents`` authenticated with the IAMDS LiteLLM API key
+         (``IAMDS_LITELLM_API_KEY`` from ``~/.hermes/.env``).
+
+    Returns (agents_list, error_message).
     """
     settings = settings or resolve_litellm_hub_settings()
     base_url = str(settings.get("base_url", "")).strip().rstrip("/")
@@ -173,47 +191,54 @@ def fetch_litellm_agents(
             "Set skills.litellm_hub.base_url in config.yaml."
         )
 
-    # Normalise: strip /litellm suffix (handled below), strip /v1 suffix
+    # Normalise: strip /v1 suffix; keep /litellm suffix detection for URL building
     hub_base = base_url.rstrip("/")
     if hub_base.endswith("/v1"):
         hub_base = hub_base[:-3]
-    if hub_base.endswith("/litellm"):
-        url = f"{hub_base}/v1/agents"
-    else:
-        url = f"{hub_base}/litellm/v1/agents"
+    litellm_prefix = "" if hub_base.endswith("/litellm") else "/litellm"
 
+    # ── Step 1: try public endpoint (no API key) ──────────────────────────────
+    public_url = f"{hub_base}{litellm_prefix}/public/agent_hub"
+    logger.info("[LiteLLMHub] Trying public agent hub: %s", public_url)
+    try:
+        public_resp = httpx.get(public_url, timeout=timeout, follow_redirects=True)
+        if public_resp.status_code == 200:
+            agents = _parse_agents_response(public_resp.json())
+            logger.info("[LiteLLMHub] Public agent hub returned %d agents", len(agents))
+            return agents, None
+        logger.warning(
+            "[LiteLLMHub] Public agent hub returned HTTP %s, falling back to authenticated endpoint",
+            public_resp.status_code,
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("[LiteLLMHub] Public agent hub failed (%s), falling back", exc)
+
+    # ── Step 2: fall back to authenticated /v1/agents ─────────────────────────
+    authed_url = f"{hub_base}{litellm_prefix}/v1/agents"
     headers: Dict[str, str] = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    logger.info("[LiteLLMHub] Fetching agents from %s", url)
+    logger.info("[LiteLLMHub] Fetching agents from authenticated endpoint: %s", authed_url)
     try:
-        resp = httpx.get(url, headers=headers or None, timeout=timeout, follow_redirects=True)
+        resp = httpx.get(authed_url, headers=headers or None, timeout=timeout, follow_redirects=True)
     except httpx.HTTPError as exc:
-        logger.error("[LiteLLMHub] Agents request failed for %s: %s", url, exc)
-        return None, f"Failed to reach LiteLLM agents endpoint at {url}: {exc}"
+        logger.error("[LiteLLMHub] Agents request failed for %s: %s", authed_url, exc)
+        return None, f"Failed to reach LiteLLM agents endpoint at {authed_url}: {exc}"
 
     if resp.status_code == 401:
-        return None, f"Unauthorized (401) at {url}. Check API key."
+        return None, f"Unauthorized (401) at {authed_url}. Check API key."
     if resp.status_code == 403:
-        return None, f"Forbidden (403) at {url}. Check API key scope."
+        return None, f"Forbidden (403) at {authed_url}. Check API key scope."
     if resp.status_code != 200:
-        return None, f"LiteLLM agents request failed: HTTP {resp.status_code} from {url}."
+        return None, f"LiteLLM agents request failed: HTTP {resp.status_code} from {authed_url}."
 
     try:
         data = resp.json()
     except ValueError:
-        return None, f"LiteLLM agents endpoint returned non-JSON from {url}."
+        return None, f"LiteLLM agents endpoint returned non-JSON from {authed_url}."
 
-    # LiteLLM may return {"data": [...]} (OpenAI list format) or a plain list
-    if isinstance(data, list):
-        agents = data
-    elif isinstance(data, dict):
-        agents = data.get("data") or data.get("agents") or []
-    else:
-        agents = []
-
-    return agents, None
+    return _parse_agents_response(data), None
 
 
 def get_active_agents() -> list[str]:
