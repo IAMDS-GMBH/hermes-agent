@@ -7045,6 +7045,73 @@ def _refresh_active_lazy_features() -> None:
         print("  `hermes update` once the upstream issue is resolved.")
 
 
+def _backfill_default_skill_dependencies(
+    install_cmd_prefix: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
+    """Ensure default installer skill deps are present after update/re-sync.
+
+    The IAMDS desktop loadout enables productivity skills (word/excel/pdf/
+    file-conversion) by default, but some of their Python deps are intentionally
+    outside ``.[all]``. Re-check and install any missing imports so a repo-sync
+    reinstall/update leaves those skills immediately usable.
+    """
+    if _is_termux_env(env):
+        return
+
+    venv_python = _resolve_install_target_python(install_cmd_prefix, env)
+    if venv_python is None:
+        return
+
+    deps: list[tuple[str, str, str]] = [
+        ("docx", "python-docx>=1,<2", "Word (.docx)"),
+        ("pptx", "python-pptx>=1,<2", "PowerPoint (.pptx)"),
+        ("markitdown", "markitdown[pptx]>=0.1,<1", "Office text extraction"),
+        ("PIL", "Pillow>=10,<12", "PowerPoint thumbnails"),
+        ("openpyxl", "openpyxl>=3,<4", "Excel workbook processing"),
+        ("pandas", "pandas>=2,<3", "Spreadsheet/tabular conversion"),
+        ("pypdf", "pypdf>=5,<6", "PDF merge/split/manipulation"),
+        ("fitz", "pymupdf>=1.24,<2", "PDF metadata/inspection"),
+        ("fpdf", "fpdf2>=2.8,<3", "Word/PDF text rendering fallback"),
+        ("weasyprint", "weasyprint>=62,<63", "HTML to PDF conversion"),
+        ("cairosvg", "cairosvg>=2.7,<3", "SVG conversion"),
+        ("pillow_heif", "pillow-heif>=0.16,<1", "HEIC image conversion"),
+    ]
+
+    missing: list[tuple[str, str, str]] = []
+    for mod, spec, label in deps:
+        try:
+            probe = subprocess.run(
+                [str(venv_python), "-c", f"import {mod}"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+            if probe.returncode != 0:
+                missing.append((mod, spec, label))
+        except (OSError, subprocess.SubprocessError):
+            missing.append((mod, spec, label))
+
+    if not missing:
+        return
+
+    print()
+    print(f"→ Backfilling {len(missing)} default skill dependency(s)...")
+    scripts_dir = _venv_scripts_dir() if _is_windows() else None
+    for _mod, spec, label in missing:
+        print(f"  + {label}: {spec}")
+        try:
+            _run_quarantined_install(
+                install_cmd_prefix + ["install", spec],
+                env=env,
+                scripts_dir=scripts_dir,
+            )
+        except subprocess.CalledProcessError:
+            print(f"  ⚠ Failed to install {spec}. {label} may be unavailable.")
+
+
 def _install_python_dependencies_with_optional_fallback(
     install_cmd_prefix: list[str],
     *,
@@ -8558,6 +8625,11 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # breadcrumb now — the remaining steps (lazy refresh, node deps, web
         # UI, desktop rebuild) are non-core and can't brick the venv.
         _clear_update_incomplete_marker()
+
+        _backfill_default_skill_dependencies(
+            [uv_bin, "pip"] if uv_bin else pip_cmd,
+            env=uv_env if uv_bin else None,
+        )
 
         _refresh_active_lazy_features()
 
