@@ -25,21 +25,23 @@ _HERMES_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 def _hermes_venv_bin_dir() -> str | None:
     """Return the Hermes installation venv's bin (or Scripts on Windows) directory.
 
-    Checks ``VIRTUAL_ENV`` first (already-activated venv wins), then probes
-    the standard venv names (``venv``, ``.venv``) under the project root.
-    Returns ``None`` when no venv directory can be found.
+    Always probes the project-local venv first so the Hermes installation
+    interpreter wins over any externally-activated venv (VIRTUAL_ENV) or
+    conda environment that may be set in the user's shell.  Falls back to
+    VIRTUAL_ENV only when no project-local venv exists.
     """
     scripts_subdir = "Scripts" if _IS_WINDOWS else "bin"
-    # If we're already inside a venv (e.g. the gateway was started with the
-    # venv Python), VIRTUAL_ENV is exported and points at the correct root.
+    # Prefer the project-local venv unconditionally — this ensures the
+    # Hermes installation Python is used regardless of whatever the user has
+    # activated in their shell (VIRTUAL_ENV, conda, pyenv, etc.).
+    for venv_name in ("venv", ".venv"):
+        candidate = _HERMES_PROJECT_ROOT / venv_name / scripts_subdir
+        if candidate.is_dir():
+            return str(candidate)
+    # No project venv found — honour the caller's active venv as a fallback.
     virtual_env = os.environ.get("VIRTUAL_ENV", "").strip()
     if virtual_env:
         candidate = Path(virtual_env) / scripts_subdir
-        if candidate.is_dir():
-            return str(candidate)
-    # Fall back to well-known venv locations under the project root.
-    for venv_name in ("venv", ".venv"):
-        candidate = _HERMES_PROJECT_ROOT / venv_name / scripts_subdir
         if candidate.is_dir():
             return str(candidate)
     return None

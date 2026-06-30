@@ -1647,6 +1647,17 @@ def _resolve_child_python(mode: str) -> str:
         exe_names = ("python", "python3")
         subdirs = ("bin",)
 
+    # Check the Hermes installation venv first — this wins over any
+    # VIRTUAL_ENV/CONDA_PREFIX set in the user's shell environment.
+    _hermes_root = Path(__file__).parent.parent.resolve()
+    for venv_name in ("venv", ".venv"):
+        for subdir in subdirs:
+            for exe in exe_names:
+                candidate = str(_hermes_root / venv_name / subdir / exe)
+                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                    if _is_usable_python(candidate):
+                        return candidate
+
     for var in ("VIRTUAL_ENV", "CONDA_PREFIX"):
         root = os.environ.get(var, "").strip()
         if not root:
@@ -1658,24 +1669,11 @@ def _resolve_child_python(mode: str) -> str:
                     continue
                 if _is_usable_python(candidate):
                     return candidate
-                # Found the interpreter but it failed the version check —
-                # log once and fall through to sys.executable.
                 logger.info(
                     "execute_code: skipping %s=%s (Python version < 3.8 or broken). "
                     "Using sys.executable instead.", var, candidate,
                 )
                 return sys.executable
-
-    # No VIRTUAL_ENV / CONDA_PREFIX — check the Hermes installation venv so
-    # project-mode executions use the same interpreter as the gateway itself.
-    _hermes_root = Path(__file__).parent.parent.resolve()
-    for venv_name in ("venv", ".venv"):
-        for subdir in subdirs:
-            for exe in exe_names:
-                candidate = str(_hermes_root / venv_name / subdir / exe)
-                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                    if _is_usable_python(candidate):
-                        return candidate
 
     return sys.executable
 
