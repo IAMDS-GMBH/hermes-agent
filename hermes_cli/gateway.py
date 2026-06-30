@@ -4541,6 +4541,21 @@ _PLATFORMS = [
     },
 ]
 
+# Platforms disabled from the interactive CLI messaging provider picker.
+# Existing adapters remain available for backwards compatibility, but users
+# cannot newly configure them from `hermes setup gateway`.
+_DISABLED_MESSAGING_PROVIDERS: frozenset[str] = frozenset(
+    {
+        "signal",
+        "email",
+        "yuanbao",
+        "api_server",
+        "webhook",
+        "webhooks",
+        "ntfy",
+    }
+)
+
 
 def _all_platforms() -> list[dict]:
     """Return the full list of platforms for setup menus.
@@ -4573,7 +4588,10 @@ def _all_platforms() -> list[dict]:
     except Exception as e:
         logger.debug("plugin discovery failed during platform enumeration: %s", e)
 
-    platforms = [dict(p) for p in _PLATFORMS]
+    platforms = [
+        dict(p) for p in _PLATFORMS
+        if p.get("key") not in _DISABLED_MESSAGING_PROVIDERS
+    ]
 
     # Drop platforms that can't function on this host. See docstring.
     if sys.platform == "win32":
@@ -4587,6 +4605,8 @@ def _all_platforms() -> list[dict]:
         return platforms
 
     for entry in platform_registry.all_entries():
+        if entry.name in _DISABLED_MESSAGING_PROVIDERS:
+            continue
         if entry.name in by_key:
             continue  # built-in already covers it
         platforms.append(

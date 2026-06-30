@@ -4409,6 +4409,14 @@ _DESKTOP_HIDDEN_PLATFORMS: frozenset[str] = frozenset({
     "msgraph_webhook",
     "photon",
     "simplex",
+    # Disabled per IAMDS product requirements.
+    "signal",
+    "email",
+    "yuanbao",
+    "api_server",
+    "webhook",
+    "webhooks",
+    "ntfy",
 })
 
 
@@ -4427,6 +4435,10 @@ async def get_messaging_platforms():
 
 @app.put("/api/messaging/platforms/{platform_id}")
 async def update_messaging_platform(platform_id: str, body: MessagingPlatformUpdate):
+    if platform_id in _DESKTOP_HIDDEN_PLATFORMS:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown messaging platform: {platform_id}"
+        )
     entry = _catalog_lookup(platform_id)
     if not entry:
         raise HTTPException(
@@ -4492,6 +4504,10 @@ async def update_messaging_platform(platform_id: str, body: MessagingPlatformUpd
 
 @app.post("/api/messaging/platforms/{platform_id}/test")
 async def test_messaging_platform(platform_id: str):
+    if platform_id in _DESKTOP_HIDDEN_PLATFORMS:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown messaging platform: {platform_id}"
+        )
     entry = _catalog_lookup(platform_id)
     if not entry:
         raise HTTPException(
