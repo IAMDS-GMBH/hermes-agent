@@ -144,6 +144,30 @@ jobs:
         with:
           workspaces: apps/bootstrap-installer/src-tauri
 
+      - name: Refresh Cargo Windows crates cache (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $srcRoot = Join-Path $env:USERPROFILE ".cargo\registry\src"
+          $cacheRoot = Join-Path $env:USERPROFILE ".cargo\registry\cache"
+          $patterns = @("windows-sys-*", "windows-targets-*")
+
+          foreach ($root in @($srcRoot, $cacheRoot)) {
+            if (-not (Test-Path $root)) {
+              continue
+            }
+            Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              $indexDir = $_.FullName
+              foreach ($pattern in $patterns) {
+                Get-ChildItem -Path (Join-Path $indexDir $pattern) -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                  Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+          }
+
+          cargo fetch --manifest-path apps/bootstrap-installer/src-tauri/Cargo.toml --locked
+
       - name: Setup Python
         if: steps.version.outputs.installer_version != ''
         uses: actions/setup-python@v5
