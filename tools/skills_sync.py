@@ -49,6 +49,17 @@ MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 # avoid importing the CLI layer into this low-level sync module).
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
+# Legacy bundled-skill rename map (old -> new). Used to prevent stale duplicate
+# folders surviving reinstall/update when a bundled skill slug is renamed.
+_SKILL_RENAMES: Tuple[Dict[str, str], ...] = (
+    {
+        "old_rel": "aimds_custom/auto_load_memory_context",
+        "new_rel": "aimds_custom/auto-load-memory-context",
+        "old_name": "auto_load_memory_context",
+        "new_name": "auto-load-memory-context",
+    },
+)
+
 
 def _get_bundled_dir() -> Path:
     """Locate the bundled skills/ directory.
@@ -190,6 +201,42 @@ def _discover_bundled_skills(bundled_dir: Path) -> List[Tuple[str, Path]]:
 
     return skills
 
+
+def _migrate_renamed_skills(manifest: Dict[str, str], *, quiet: bool = False) -> None:
+    """Migrate on-disk + manifest state for bundled skill slug renames."""
+    for item in _SKILL_RENAMES:
+        old_rel = item["old_rel"]
+        new_rel = item["new_rel"]
+        old_name = item["old_name"]
+        new_name = item["new_name"]
+
+        old_dest = SKILLS_DIR / Path(old_rel)
+        new_dest = SKILLS_DIR / Path(new_rel)
+
+        # Move old folder to the new canonical location when possible.
+        if old_dest.exists() and not new_dest.exists():
+            try:
+                new_dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old_dest), str(new_dest))
+                if not quiet:
+                    print(f"  ↪ migrated {old_name} -> {new_name}")
+            except (OSError, IOError) as e:
+                logger.debug("Could not migrate %s to %s: %s", old_dest, new_dest, e, exc_info=True)
+        elif old_dest.exists():
+            # If both exist, drop the legacy folder so the stale skill does not
+            # keep showing up in discovery surfaces after reinstall/update.
+            try:
+                _rmtree_writable(old_dest)
+                if not quiet:
+                    print(f"  - removed legacy skill folder {old_name}")
+            except (OSError, IOError) as e:
+                logger.debug("Could not remove legacy skill folder %s: %s", old_dest, e, exc_info=True)
+
+        # Manifest key migration so update detection continues to work.
+        if old_name in manifest:
+            if new_name not in manifest:
+                manifest[new_name] = manifest[old_name]
+            del manifest[old_name]
 
 def _compute_relative_dest(skill_dir: Path, bundled_dir: Path) -> Path:
     """
@@ -483,6 +530,7 @@ def sync_skills(quiet: bool = False) -> dict:
 
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest()
+    _migrate_renamed_skills(manifest, quiet=quiet)
     bundled_skills = _discover_bundled_skills(bundled_dir)
     bundled_names = {name for name, _ in bundled_skills}
     suppressed = _read_suppressed_names()

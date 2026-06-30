@@ -2142,6 +2142,10 @@ SOUL_EOF
             "github"; do
             rm -rf "$HERMES_HOME/skills/$blocked_skill_dir"
         done
+
+        # Legacy bundled-skill rename cleanup: remove pre-kebab slug left from
+        # older installs so it doesn't remain visible after reinstall/update.
+        rm -rf "$HERMES_HOME/skills/aimds_custom/auto_load_memory_context"
     fi
 
     # Apply bootstrap credentials if provided by the installer UI
