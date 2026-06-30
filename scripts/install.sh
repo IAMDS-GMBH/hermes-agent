@@ -1571,9 +1571,18 @@ ensure_office_document_dependencies() {
     fi
 
     local missing=false
+    local installer_cmd=""
     local import_name=""
     local spec=""
     local label=""
+
+    if [ -n "${UV_CMD:-}" ]; then
+        installer_cmd="$UV_CMD pip install --python \"$python_exe\""
+    elif command -v uv >/dev/null 2>&1; then
+        installer_cmd="uv pip install --python \"$python_exe\""
+    else
+        installer_cmd="\"$python_exe\" -m pip install"
+    fi
 
     for entry in \
         "docx|python-docx>=1,<2|Word (.docx)" \
@@ -1592,7 +1601,7 @@ ensure_office_document_dependencies() {
         if ! "$python_exe" -c "import ${import_name}" >/dev/null 2>&1; then
             missing=true
             log_info "Installing ${label} dependency: ${spec}"
-            if ! $UV_CMD pip install --python "$python_exe" "$spec"; then
+            if ! eval "$installer_cmd \"$spec\""; then
                 log_warn "Failed to install ${spec}. ${label} features may be unavailable until installed manually."
             fi
         fi
@@ -1602,6 +1611,18 @@ ensure_office_document_dependencies() {
         log_info "Office dependency check completed."
     fi
     return 0
+}
+
+backfill_skill_dependencies_on_repo_sync() {
+    # Reinstall/repo-sync path: if a managed venv already exists, re-check
+    # installer skill deps and backfill any missing packages without waiting
+    # for a full dependency reinstall stage.
+    if [ "$USE_VENV" != true ]; then
+        return 0
+    fi
+    if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        ensure_office_document_dependencies || true
+    fi
 }
 
 setup_path() {
@@ -4169,6 +4190,7 @@ run_stage_body() {
             check_git
             clone_repo
             ensure_litellm_hub_gateway "$INSTALL_DIR"
+            backfill_skill_dependencies_on_repo_sync
             ;;
         venv)
             detect_os

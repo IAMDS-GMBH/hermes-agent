@@ -1775,10 +1775,24 @@ function Ensure-OfficeDocumentDependencies {
         }
 
         Write-Info "Installing $($dep.Label) dependency: $($dep.Spec)"
-        & $UvCmd pip install --python $pythonExe $dep.Spec
+        if ($UvCmd) {
+            & $UvCmd pip install --python $pythonExe $dep.Spec
+        } else {
+            & $pythonExe -m pip install $dep.Spec
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "Failed to install $($dep.Spec). $($dep.Label) features may be unavailable until installed manually."
         }
+    }
+}
+
+function Backfill-SkillDependenciesOnRepoSync {
+    # Reinstall/repo-sync path: if a managed venv already exists, re-check
+    # installer skill deps and backfill missing modules immediately.
+    if ($NoVenv) { return }
+    $pythonExe = "$InstallDir\venv\Scripts\python.exe"
+    if (Test-Path $pythonExe) {
+        Ensure-OfficeDocumentDependencies
     }
 }
 
@@ -3653,7 +3667,7 @@ function Stage-Node             {
     }
 }
 function Stage-SystemPackages   { Install-SystemPackages }
-function Stage-Repository       { Install-Repository }
+function Stage-Repository       { Install-Repository; Backfill-SkillDependenciesOnRepoSync }
 function Stage-Venv             { Resolve-UvCmd; Install-Venv }
 function Stage-Dependencies     { Resolve-UvCmd; Install-Dependencies }
 function Stage-NodeDeps         { Install-NodeDeps }
