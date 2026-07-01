@@ -6089,14 +6089,25 @@ async function runDesktopUninstall(mode) {
   }
 
   let scriptPath
+  let launcherPath
   let runner
   let runnerArgs
   try {
     if (IS_WINDOWS) {
       scriptPath = path.join(app.getPath('temp'), `hermes-uninstall-${Date.now()}.cmd`)
       fs.writeFileSync(scriptPath, buildWindowsCleanupScript(scriptArgs))
-      runner = process.env.ComSpec || 'cmd.exe'
-      runnerArgs = ['/c', scriptPath]
+      launcherPath = path.join(app.getPath('temp'), `hermes-uninstall-launcher-${Date.now()}.vbs`)
+      const systemRoot = process.env.SystemRoot || 'C:\\Windows'
+      const cmdPath = process.env.ComSpec || path.join(systemRoot, 'System32', 'cmd.exe')
+      const wscriptPath = path.join(systemRoot, 'System32', 'wscript.exe')
+      const vbsEscape = value => String(value).replace(/"/g, '""')
+      const launcherScript = [
+        'Set WshShell = CreateObject("WScript.Shell")',
+        `WshShell.Run """${vbsEscape(cmdPath)}"" /d /s /c """"${vbsEscape(scriptPath)}""""", 0, False`
+      ].join('\r\n')
+      fs.writeFileSync(launcherPath, launcherScript)
+      runner = fileExists(wscriptPath) ? wscriptPath : 'wscript.exe'
+      runnerArgs = ['//nologo', launcherPath]
     } else {
       scriptPath = path.join(app.getPath('temp'), `hermes-uninstall-${Date.now()}.sh`)
       fs.writeFileSync(scriptPath, buildPosixCleanupScript(scriptArgs), { mode: 0o755 })
