@@ -746,6 +746,7 @@ export const de
     gatewayStopped: 'Messaging gateway stopped',
     getCredentials: 'Get your credentials',
     openSetupGuide: 'Open setup guide',
+    contactSystemAdmin: 'Contact your System Admin to enable this feature.',
     required: 'Required',
     recommended: 'Recommended',
     advanced: count => `Advanced (${count})`,

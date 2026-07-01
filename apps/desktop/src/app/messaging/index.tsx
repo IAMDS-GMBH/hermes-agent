@@ -31,6 +31,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
 import { OutlookAuthModal } from './outlook-auth-modal'
+import { OutlookSetupGuideModal } from './outlook-setup-guide-modal'
 
 interface MessagingViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
@@ -110,6 +111,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
   const [outlookAuthOpen, setOutlookAuthOpen] = useState(false)
+  const [outlookGuideOpen, setOutlookGuideOpen] = useState(false)
   const [outlookConnected, setOutlookConnected] = useState<boolean | null>(null)
   const platformIds = useMemo(() => platforms?.map(p => p.id) ?? [], [platforms])
   const [selectedId, setSelectedId] = useRouteEnumParam('platform', platformIds, platformIds[0] ?? '')
@@ -318,6 +320,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                   onToggle={enabled => void handleToggle(selected, enabled)}
                   platform={selected}
                   saving={saving}
+                  onOutlookOpenGuide={() => setOutlookGuideOpen(true)}
                   onOutlookTest={() => setOutlookAuthOpen(true)}
                   onOutlookReadLatest={() => {
                     setComposerDraft('Read my latest Outlook emails and summarize priorities with sender + action items.')
@@ -325,6 +328,9 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                   }}
                   outlookConnected={selected.state === 'connected' ? true : outlookConnected}
                 />
+                {selected.id === 'outlook' && (
+                  <OutlookSetupGuideModal open={outlookGuideOpen} onClose={() => setOutlookGuideOpen(false)} />
+                )}
                 {selected.id === 'outlook' && (
                   <OutlookAuthModal
                     open={outlookAuthOpen}
@@ -402,6 +408,7 @@ function PlatformDetail({
   onToggle,
   platform,
   saving,
+  onOutlookOpenGuide,
   onOutlookTest,
   onOutlookReadLatest,
   outlookConnected
@@ -413,6 +420,7 @@ function PlatformDetail({
   onToggle: (enabled: boolean) => void
   platform: MessagingPlatformInfo
   saving: string | null
+  onOutlookOpenGuide?: () => void
   onOutlookTest?: () => void
   onOutlookReadLatest?: () => void
   outlookConnected?: boolean | null
@@ -452,7 +460,7 @@ function PlatformDetail({
             <div className="min-w-0 flex-1">
               <h3 className="text-[0.9375rem] font-semibold tracking-tight">{platform.name}</h3>
               <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                {platform.description}
+                {platform.description || introCopy(platform, m)}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <StatePill tone={stateTone(platform)}>{stateLabel(platform.state, m)}</StatePill>
@@ -478,12 +486,15 @@ function PlatformDetail({
               {introCopy(platform, m)}
             </p>
             <div className="mt-3">
-              <Button asChild size="sm" variant="textStrong">
-                <a href={platform.docs_url} rel="noreferrer" target="_blank">
-                  {m.openSetupGuide}
+              <p className="text-xs font-medium text-muted-foreground">
+                {platform.id === 'outlook' ? m.openSetupGuide : m.contactSystemAdmin}
+              </p>
+              {platform.id === 'outlook' && onOutlookOpenGuide && (
+                <Button className="mt-2" onClick={onOutlookOpenGuide} size="sm" variant="outline">
                   <ExternalLink className="size-3.5" />
-                </a>
-              </Button>
+                  {m.openSetupGuide}
+                </Button>
+              )}
             </div>
           </section>
 
@@ -620,6 +631,11 @@ const PLATFORM_INTRO: Record<string, string> = {
     'Use a dedicated mailbox. For Gmail/Workspace, create an app password and use imap.gmail.com / smtp.gmail.com.',
   outlook:
     'Create Azure app, grant delegated Mail.Read and Mail.Send, then set tenant ID + client ID. Use Test to complete device flow.',
+  line: 'Get LINE credentials from your system administrator, then add them here to connect Hermes.',
+  teams:
+    'Ask your system administrator to register Microsoft Teams and share the bot credentials required for Hermes.',
+  msteams:
+    'Ask your system administrator to register Microsoft Teams and share the bot credentials required for Hermes.',
   sms: 'Get your Twilio Account SID and Auth Token from the Twilio console, plus a phone number that can send SMS.',
   dingtalk: 'Create a DingTalk app in the developer console, then copy the Client ID (App key) and Client Secret here.',
   feishu:

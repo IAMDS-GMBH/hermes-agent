@@ -616,6 +616,7 @@ export interface Translations {
     gatewayStopped: string
     getCredentials: string
     openSetupGuide: string
+    contactSystemAdmin: string
     required: string
     recommended: string
     advanced: (count: number) => string
