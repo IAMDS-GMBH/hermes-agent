@@ -3,6 +3,10 @@ name: Release Bootstrap Installers
 on:
   workflow_dispatch:
     inputs:
+      source_ref:
+        description: "Git ref to build from (e.g. refs/tags/v0.1.32). Run workflow from main."
+        required: false
+        type: string
       version:
         description: "Installer version override (e.g. 0.1.0 or v0.1.0)"
         required: false
@@ -33,8 +37,18 @@ jobs:
         os: [macos-latest, self-hosted-windows]
 
     steps:
+      - name: Enforce main workflow ref (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        shell: bash
+        run: |
+          echo "::error::Run workflow_dispatch from refs/heads/main so Azure OIDC subject matches main."
+          echo "::error::Use input 'source_ref' to build a tag/commit while keeping workflow ref on main."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_ref || github.ref }}
 
       - name: Resolve installer version
         id: version
@@ -220,7 +234,7 @@ jobs:
 
       - name: Azure login (OIDC)
         id: azure_login
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
         with:
@@ -229,7 +243,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installer with Azure Artifact Signing
-        if: runner.os == 'Windows' && steps.azure_login.outcome == 'success'
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main' && steps.azure_login.outcome == 'success'
         continue-on-error: true
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
@@ -245,9 +259,14 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Warn if Windows installer is unsigned
-        if: runner.os == 'Windows' && steps.azure_login.outcome != 'success'
+        if: runner.os == 'Windows' && (github.ref != 'refs/heads/main' || steps.azure_login.outcome != 'success')
         shell: bash
-        run: echo "::warning::Azure login failed — Windows installer will be released unsigned."
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::warning::Skipping Azure signing on non-main ref (${GITHUB_REF}). Windows installer will be released unsigned."
+          else
+            echo "::warning::Azure login failed — Windows installer will be released unsigned."
+          fi
 
       - name: Collect macOS artifacts
         if: runner.os == 'macOS'
