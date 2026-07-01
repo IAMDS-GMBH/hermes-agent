@@ -351,6 +351,39 @@ function Install-Uv {
             return $true
         }
 
+        # Fallback: installer may ignore UV_INSTALL_DIR depending on shell
+        # context and place uv in a user-local location. Discover and adopt it.
+        $candidatePaths = @()
+        if ($env:USERPROFILE) {
+            $candidatePaths += (Join-Path $env:USERPROFILE ".local\bin\uv.exe")
+        }
+        if ($env:LOCALAPPDATA) {
+            $candidatePaths += (Join-Path $env:LOCALAPPDATA "uv\bin\uv.exe")
+        }
+        $discoveredUv = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $discoveredUv) {
+            $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+            if ($uvCmd -and $uvCmd.Source) {
+                $discoveredUv = $uvCmd.Source
+            }
+        }
+
+        if ($discoveredUv) {
+            try {
+                Copy-Item -LiteralPath $discoveredUv -Destination $managedUv -Force
+                $script:UvCmd = $managedUv
+                $version = & $managedUv --version
+                Write-Success "Managed uv installed ($version)"
+                return $true
+            } catch {
+                # Non-fatal: keep using discovered uv path.
+                $script:UvCmd = $discoveredUv
+                $version = & $discoveredUv --version
+                Write-Warn "Could not copy uv to $managedUv; using $discoveredUv ($version)"
+                return $true
+            }
+        }
+
         Write-Err "uv installed but not found at $managedUv"
         Write-Info "Install manually: https://docs.astral.sh/uv/getting-started/installation/"
         return $false
@@ -401,6 +434,23 @@ function Resolve-UvCmd {
     if (Test-Path $managedUv) {
         $script:UvCmd = $managedUv
         return
+    }
+
+    # Secondary known install locations (when astral installer ignored
+    # UV_INSTALL_DIR or managed copy was not permitted).
+    if ($env:USERPROFILE) {
+        $userLocalUv = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
+        if (Test-Path $userLocalUv) {
+            $script:UvCmd = $userLocalUv
+            return
+        }
+    }
+    if ($env:LOCALAPPDATA) {
+        $localAppDataUv = Join-Path $env:LOCALAPPDATA "uv\bin\uv.exe"
+        if (Test-Path $localAppDataUv) {
+            $script:UvCmd = $localAppDataUv
+            return
+        }
     }
 
     # Fall back to PATH (covers edge cases where the installer ran in a
