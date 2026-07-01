@@ -6057,6 +6057,12 @@ async function runDesktopUninstall(mode) {
 
   const appPath = resolveRemovableAppPath(process.execPath, process.platform, process.env)
   const removeBundle = shouldRemoveAppBundle(IS_PACKAGED, appPath) ? appPath : null
+  const extraRemovePaths = []
+  if (IS_WINDOWS && process.env.APPDATA) {
+    // Legacy/new desktop data dirs under Roaming.
+    extraRemovePaths.push(path.join(process.env.APPDATA, 'hermes'))
+    extraRemovePaths.push(path.join(process.env.APPDATA, 'Hermes'))
+  }
 
   // CRITICAL (Windows): tear down every backend the desktop owns and wait for
   // the venv shim to unlock BEFORE the cleanup script runs. lite/full delete
@@ -6078,7 +6084,8 @@ async function runDesktopUninstall(mode) {
     uninstallArgs,
     appPath: removeBundle,
     hermesHome: HERMES_HOME,
-    removeHermesHome: modeRemovesUserData(effectiveMode)
+    removeHermesHome: modeRemovesUserData(effectiveMode),
+    extraRemovePaths
   }
 
   let scriptPath

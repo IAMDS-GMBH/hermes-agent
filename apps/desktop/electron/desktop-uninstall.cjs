@@ -127,7 +127,8 @@ function buildPosixCleanupScript({
   uninstallArgs,
   appPath,
   hermesHome,
-  removeHermesHome = false
+  removeHermesHome = false,
+  extraRemovePaths = []
 }) {
   const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
   const lines = [
@@ -156,6 +157,9 @@ function buildPosixCleanupScript({
   }
   if (removeHermesHome) {
     lines.push(`rm -rf ${q(hermesHome)} || true`)
+  }
+  for (const extraPath of extraRemovePaths) {
+    if (extraPath) lines.push(`rm -rf ${q(extraPath)} || true`)
   }
   // Self-delete the script.
   lines.push('rm -f "$0" 2>/dev/null || true')
@@ -189,7 +193,8 @@ function buildWindowsCleanupScript({
   uninstallArgs,
   appPath,
   hermesHome,
-  removeHermesHome = false
+  removeHermesHome = false,
+  extraRemovePaths = []
 }) {
   const pid = Number(desktopPid) || 0
   // cmd.exe has no string escaping inside quotes; strip embedded quotes (paths
@@ -250,6 +255,23 @@ function buildWindowsCleanupScript({
       ':rmhomedone'
     )
   }
+  extraRemovePaths
+    .filter(Boolean)
+    .forEach((extraPath, index) => {
+      const suffix = `${index + 1}`
+      lines.push(
+        `set /a tries_extra_${suffix}=0`,
+        `:rmextralp_${suffix}`,
+        `if not exist ${q(extraPath)} goto rmextradone_${suffix}`,
+        `rmdir /s /q ${q(extraPath)} >nul 2>&1`,
+        `if not exist ${q(extraPath)} goto rmextradone_${suffix}`,
+        `set /a tries_extra_${suffix}+=1`,
+        `if %tries_extra_${suffix}% geq 10 goto rmextradone_${suffix}`,
+        'timeout /t 1 /nobreak >nul',
+        `goto rmextralp_${suffix}`,
+        `:rmextradone_${suffix}`
+      )
+    })
   lines.push('del "%~f0"')
   lines.push('')
   return lines.join('\r\n')
