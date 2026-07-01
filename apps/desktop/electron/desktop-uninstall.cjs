@@ -119,7 +119,16 @@ function shouldRemoveAppBundle(isPackaged, appPath) {
  * resolves from the agent source. `q()` single-quote-escapes for the shell
  * (closes-escapes-reopens any embedded apostrophe), defending against spaces.
  */
-function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot, uninstallArgs, appPath, hermesHome }) {
+function buildPosixCleanupScript({
+  desktopPid,
+  pythonExe,
+  pythonPath,
+  agentRoot,
+  uninstallArgs,
+  appPath,
+  hermesHome,
+  removeHermesHome = false
+}) {
   const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
   const lines = [
     '#!/bin/bash',
@@ -145,6 +154,9 @@ function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot,
   if (appPath) {
     lines.push(`rm -rf ${q(appPath)} || true`)
   }
+  if (removeHermesHome) {
+    lines.push(`rm -rf ${q(hermesHome)} || true`)
+  }
   // Self-delete the script.
   lines.push('rm -f "$0" 2>/dev/null || true')
   lines.push('')
@@ -169,7 +181,16 @@ function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot,
  * Removal: even after the desktop PID is gone, Windows releases directory
  * handles lazily, so a single `rmdir /s /q` can half-fail — retry up to 10x.
  */
-function buildWindowsCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot, uninstallArgs, appPath, hermesHome }) {
+function buildWindowsCleanupScript({
+  desktopPid,
+  pythonExe,
+  pythonPath,
+  agentRoot,
+  uninstallArgs,
+  appPath,
+  hermesHome,
+  removeHermesHome = false
+}) {
   const pid = Number(desktopPid) || 0
   // cmd.exe has no string escaping inside quotes; strip embedded quotes (paths
   // under %LOCALAPPDATA% never contain them). `&`/`^` in a path would still be
@@ -213,6 +234,20 @@ function buildWindowsCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoo
       'timeout /t 1 /nobreak >nul',
       'goto rmloop',
       ':rmdone'
+    )
+  }
+  if (removeHermesHome) {
+    lines.push(
+      'set /a tries_home=0',
+      ':rmhomeloop',
+      `if not exist ${q(hermesHome)} goto rmhomedone`,
+      `rmdir /s /q ${q(hermesHome)} >nul 2>&1`,
+      `if not exist ${q(hermesHome)} goto rmhomedone`,
+      'set /a tries_home+=1',
+      'if %tries_home% geq 10 goto rmhomedone',
+      'timeout /t 1 /nobreak >nul',
+      'goto rmhomeloop',
+      ':rmhomedone'
     )
   }
   lines.push('del "%~f0"')
