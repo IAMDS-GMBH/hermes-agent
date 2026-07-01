@@ -2291,9 +2291,9 @@ function Apply-BootstrapCredentials {
                 url: $mcpServerUrl
                 headers:
                   Authorization: "Bearer $bootstrapApiKey"
-    timeout: 180
-    connect_timeout: 60
-    trusted: true
+                timeout: 180
+                connect_timeout: 60
+                trusted: true
 "@
             $mcpMatch = [regex]::Match($config, '(?ms)^mcp_servers:\r?\n(.*?)(?=^\S|\z)')
             if ($mcpMatch.Success) {
