@@ -71,6 +71,105 @@ logger = logging.getLogger(__name__)
 INTERRUPT_WAITING_FOR_MODEL_PREFIX = "Operation interrupted: waiting for model response ("
 
 
+def _resolve_runtime_memory_context_tool_name(valid_tool_names: Any) -> Optional[str]:
+    """Resolve the active memory_context tool name from session-valid tools."""
+    names = set(valid_tool_names or [])
+    if not names:
+        return None
+    if "memory_context" in names:
+        return "memory_context"
+    for prefix in ("remoteMCP_", "mcp_"):
+        matches = sorted(
+            name
+            for name in names
+            if isinstance(name, str)
+            and name.startswith(prefix)
+            and name.endswith("_memory_context")
+        )
+        if matches:
+            return matches[0]
+    return None
+
+
+def _has_tool_call_in_messages(messages: List[Dict[str, Any]], tool_name: str) -> bool:
+    """Return True when ``messages`` already contain a call/result for ``tool_name``."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "tool" and msg.get("name") == tool_name:
+            return True
+        if msg.get("role") != "assistant":
+            continue
+        tool_calls = msg.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function")
+            if isinstance(fn, dict) and fn.get("name") == tool_name:
+                return True
+    return False
+
+
+def _inject_first_turn_memory_context_call(
+    agent: Any,
+    messages: List[Dict[str, Any]],
+    *,
+    current_turn_user_idx: int,
+    effective_task_id: str,
+) -> bool:
+    """Force a memory_context tool call on the first turn before any model reply."""
+    if current_turn_user_idx != 0:
+        return False
+    tool_name = _resolve_runtime_memory_context_tool_name(getattr(agent, "valid_tool_names", None))
+    if not tool_name:
+        return False
+    if _has_tool_call_in_messages(messages, tool_name):
+        return False
+
+    tool_call_id = f"forced_memory_context_{uuid.uuid4().hex[:8]}"
+    assistant_call_msg = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {"name": tool_name, "arguments": "{}"},
+            }
+        ],
+    }
+    messages.append(assistant_call_msg)
+
+    try:
+        tool_result = agent._invoke_tool(
+            tool_name,
+            {},
+            effective_task_id,
+            tool_call_id=tool_call_id,
+            messages=messages,
+        )
+    except Exception as exc:
+        tool_result = json.dumps(
+            {
+                "error": f"{tool_name} pre-call failed: {exc}",
+                "phase": "first_turn_memory_context_injection",
+            },
+            ensure_ascii=False,
+        )
+
+    messages.append(
+        {
+            "role": "tool",
+            "name": tool_name,
+            "tool_call_id": tool_call_id,
+            "content": tool_result,
+        }
+    )
+    return True
+
+
 def _collect_initial_query_text_segments(
     api_messages: List[Dict[str, Any]],
     *,
@@ -542,6 +641,16 @@ def run_conversation(
             effective_task_id=effective_task_id,
             should_review_memory=_should_review_memory,
         )
+
+    if _inject_first_turn_memory_context_call(
+        agent,
+        messages,
+        current_turn_user_idx=current_turn_user_idx,
+        effective_task_id=effective_task_id,
+    ):
+        # We already injected memory context as a real tool result in history.
+        # Avoid duplicate, API-only memory-prefetch injection for this turn.
+        _ext_prefetch_cache = ""
 
     while (api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
         # Reset per-turn checkpoint dedup so each iteration can take one snapshot
