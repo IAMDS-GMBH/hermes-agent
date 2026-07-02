@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agent.system_prompt import build_system_prompt_parts
+from hermes_cli.config import SINGLE_MCP_SERVER_NAME
 
 
 def _make_agent(**overrides):
@@ -99,11 +100,15 @@ class TestCodingContextBlock:
 
 
 class TestRemoteMcpMemoryPrompt:
+    _PREF_MCP_CONTEXT = f"mcp_{SINGLE_MCP_SERVER_NAME}_mcp_memory_memory_context"
+    _PREF_MCP_SKILL_READ = f"mcp_{SINGLE_MCP_SERVER_NAME}_mcp_memory_skill_read"
+
     def test_uses_prefixed_remote_mcp_memory_context_tool_name(self):
-        agent = _make_agent(valid_tool_names=["remoteMCP_memory_memory_context"], platform="cli")
+        prefixed = f"{SINGLE_MCP_SERVER_NAME}_memory_memory_context"
+        agent = _make_agent(valid_tool_names=[prefixed], platform="cli")
         stable = _stable_prompt(agent)
         assert "# Memory Context (mandatory)" in stable
-        assert "FIRST action in this session must be a call to `remoteMCP_memory_memory_context`" in stable
+        assert f"FIRST action in this session must be a call to `{prefixed}`" in stable
         assert "including `skill_view` and any memory read/list/search tools" in stable
         assert "asks for their name" in stable
         assert "primary source and call it before using any other memory tool" in stable
@@ -123,21 +128,21 @@ class TestRemoteMcpMemoryPrompt:
     def test_uses_mcp_memory_skill_read_for_init_hints_when_available(self):
         agent = _make_agent(
             valid_tool_names=[
-                "mcp_remoteMCP_mcp_memory_memory_context",
-                "mcp_remoteMCP_mcp_memory_skill_read",
+                self._PREF_MCP_CONTEXT,
+                self._PREF_MCP_SKILL_READ,
                 "skill_view",
             ],
             platform="cli",
         )
         stable = _stable_prompt(agent)
         assert "skill_read('init')" in stable
-        assert "`mcp_remoteMCP_mcp_memory_skill_read`" in stable
+        assert f"`{self._PREF_MCP_SKILL_READ}`" in stable
         assert "not local `skill_view`" in stable
 
     def test_blocks_local_skill_view_init_when_mcp_skill_read_missing(self):
         agent = _make_agent(
             valid_tool_names=[
-                "mcp_remoteMCP_mcp_memory_memory_context",
+                self._PREF_MCP_CONTEXT,
                 "skill_view",
             ],
             platform="cli",

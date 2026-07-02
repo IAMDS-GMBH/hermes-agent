@@ -236,6 +236,9 @@ _RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 # calls read_raw_config. Also covers mutation of the module-level cache
 # dicts above.
 _CONFIG_LOCK = threading.RLock()
+
+# Canonical name for Hermes' single managed MCP server entry.
+SINGLE_MCP_SERVER_NAME = "remoteMCP"
 # Env var names written to .env that aren't in OPTIONAL_ENV_VARS
 # (managed by setup/provider flows directly).
 _EXTRA_ENV_KEYS = frozenset({
@@ -804,6 +807,39 @@ def _ensure_hermes_home_managed(home: Path):
 # =============================================================================
 # Config loading/saving
 # =============================================================================
+
+
+def get_primary_mcp_server_name(config: Optional[Dict[str, Any]] = None) -> str:
+    """Return the preferred MCP server key for single-server memory/tool wiring.
+
+    Preference order:
+    1. The only configured ``mcp_servers`` key (if exactly one exists)
+    2. ``SINGLE_MCP_SERVER_NAME`` when present in ``mcp_servers``
+    3. First configured ``mcp_servers`` key
+    4. ``SINGLE_MCP_SERVER_NAME`` fallback
+    """
+    cfg = config
+    if cfg is None:
+        try:
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+
+    if not isinstance(cfg, dict):
+        return SINGLE_MCP_SERVER_NAME
+
+    servers = cfg.get("mcp_servers")
+    if not isinstance(servers, dict) or not servers:
+        return SINGLE_MCP_SERVER_NAME
+
+    names = [name for name in servers.keys() if isinstance(name, str) and name.strip()]
+    if not names:
+        return SINGLE_MCP_SERVER_NAME
+    if len(names) == 1:
+        return names[0]
+    if SINGLE_MCP_SERVER_NAME in servers:
+        return SINGLE_MCP_SERVER_NAME
+    return names[0]
 
 DEFAULT_CONFIG = {
     "model": "",

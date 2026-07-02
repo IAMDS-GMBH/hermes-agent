@@ -1832,14 +1832,24 @@ apply_bootstrap_credentials() {
             if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
                 cfg_python="$INSTALL_DIR/venv/bin/python"
             fi
-            "$cfg_python" - "$HERMES_HOME/config.yaml" "${mcp_server_url}" "${HERMES_BOOTSTRAP_API_KEY}" <<'PYEOF'
+            local mcp_server_name
+            mcp_server_name="$("$cfg_python" - <<'PYEOF'
+try:
+    from hermes_cli.config import get_primary_mcp_server_name
+    print(get_primary_mcp_server_name())
+except Exception:
+    print("memory")
+PYEOF
+)"
+            mcp_server_name="${mcp_server_name:-memory}"
+            "$cfg_python" - "$HERMES_HOME/config.yaml" "${mcp_server_url}" "${HERMES_BOOTSTRAP_API_KEY}" "${mcp_server_name}" <<'PYEOF'
 import re
 import sys
 
-path, mcp_url, api_key = sys.argv[1], sys.argv[2], sys.argv[3]
+path, mcp_url, api_key, mcp_name = sys.argv[1], sys.argv[2], sys.argv[3], (sys.argv[4] or "memory")
 text = open(path, encoding="utf-8").read()
 memory_block = (
-    "  remoteMCP:\n"
+    f"  {mcp_name}:\n"
     f"    url: {mcp_url}\n"
     "    headers:\n"
     f"      Authorization: \"Bearer {api_key}\"\n"
@@ -1851,7 +1861,19 @@ memory_block = (
 root = re.search(r"(?ms)^mcp_servers:\n(.*?)(?=^\S|\Z)", text)
 if root:
     body = root.group(1)
-    body = re.sub(r"(?ms)^  (?:memory|remoteMCP):\n(?:    .*\n)*", "", body)
+    try:
+        from hermes_cli.config import SINGLE_MCP_SERVER_NAME
+    except Exception:
+        SINGLE_MCP_SERVER_NAME = ""
+    names = sorted(
+        {
+            n
+            for n in ("memory", mcp_name, SINGLE_MCP_SERVER_NAME)
+            if isinstance(n, str) and n.strip()
+        }
+    )
+    pattern = r"(?ms)^  (?:" + "|".join(re.escape(n) for n in names) + r"):\n(?:    .*\n)*"
+    body = re.sub(pattern, "", body)
     new_root = "mcp_servers:\n" + memory_block + body
     text = text[:root.start()] + new_root + text[root.end():]
 else:

@@ -1432,16 +1432,35 @@ def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> st
 
     Supports native and prefixed names, including:
     - ``memory_context``
-    - ``mcp_<server>_memory_context``
-    - ``remoteMCP_<server>_memory_context``
+    - ``mcp_<configured_server>_*_memory_context``
+    - ``<configured_server>_*_memory_context``
+    - generic ``mcp_*_memory_context``
     """
     names = set(valid_tool_names or set())
     if not names:
         return None
     if "memory_context" in names:
         return "memory_context"
-    # Prefer remoteMCP-prefixed names first, then generic mcp_.
-    for prefix in ("remoteMCP_", "mcp_"):
+
+    preferred_server_name = None
+    try:
+        from hermes_cli.config import get_primary_mcp_server_name
+
+        preferred_server_name = get_primary_mcp_server_name()
+    except Exception:
+        preferred_server_name = None
+
+    prefixes: list[str] = []
+    if preferred_server_name:
+        prefixes.extend(
+            [
+                f"mcp_{preferred_server_name}_",
+                f"{preferred_server_name}_",
+            ]
+        )
+    prefixes.append("mcp_")
+
+    for prefix in prefixes:
         matches = sorted(
             name
             for name in names
@@ -1449,6 +1468,12 @@ def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> st
         )
         if matches:
             return matches[0]
+    # Last-resort compatibility for unusual/custom prefixes.
+    suffix_matches = sorted(
+        name for name in names if isinstance(name, str) and name.endswith("_memory_context")
+    )
+    if suffix_matches:
+        return suffix_matches[0]
     return None
 
 
@@ -1457,15 +1482,35 @@ def _resolve_memory_skill_read_tool_name(valid_tool_names: "set[str] | None") ->
 
     Supports native and prefixed names, including:
     - ``memory_skill_read``
-    - ``mcp_<server>_memory_skill_read``
-    - ``remoteMCP_<server>_memory_skill_read``
+    - ``mcp_<configured_server>_*_memory_skill_read``
+    - ``<configured_server>_*_memory_skill_read``
+    - generic ``mcp_*_memory_skill_read``
     """
     names = set(valid_tool_names or set())
     if not names:
         return None
     if "memory_skill_read" in names:
         return "memory_skill_read"
-    for prefix in ("remoteMCP_", "mcp_"):
+
+    preferred_server_name = None
+    try:
+        from hermes_cli.config import get_primary_mcp_server_name
+
+        preferred_server_name = get_primary_mcp_server_name()
+    except Exception:
+        preferred_server_name = None
+
+    prefixes: list[str] = []
+    if preferred_server_name:
+        prefixes.extend(
+            [
+                f"mcp_{preferred_server_name}_",
+                f"{preferred_server_name}_",
+            ]
+        )
+    prefixes.append("mcp_")
+
+    for prefix in prefixes:
         matches = sorted(
             name
             for name in names
@@ -1473,6 +1518,11 @@ def _resolve_memory_skill_read_tool_name(valid_tool_names: "set[str] | None") ->
         )
         if matches:
             return matches[0]
+    suffix_matches = sorted(
+        name for name in names if isinstance(name, str) and name.endswith("_memory_skill_read")
+    )
+    if suffix_matches:
+        return suffix_matches[0]
     return None
 
 

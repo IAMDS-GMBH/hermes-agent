@@ -2335,9 +2335,24 @@ function Apply-BootstrapCredentials {
             $config = $config -replace '(?m)^  base_url:.*$', "  base_url: $escapedUrl"
 
             # Upsert mcp_servers.remoteMCP with Bearer auth using API key.
-            # Keep other existing MCP servers untouched.
+            # Keep other existing MCP servers untouched; the active key comes from config.py.
+            $mcpServerName = "memory"
+            # Reuse the same interpreter resolution pattern used by other
+            # installer steps: venv python when available, otherwise "python".
+            $cfgPython = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { "python" }
+            if ((-not (Test-Path $cfgPython)) -and $cfgPython -ne "python") {
+                $cfgPython = $null
+            }
+            try {
+                if (-not [string]::IsNullOrWhiteSpace($cfgPython)) {
+                    $resolved = (& $cfgPython -c "from hermes_cli.config import get_primary_mcp_server_name; print(get_primary_mcp_server_name())" 2>$null)
+                    if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+                        $mcpServerName = $resolved.Trim()
+                    }
+                }
+            } catch {}
             $memoryEntry = @"
-              remoteMCP:
+              $mcpServerName:
                 url: $mcpServerUrl
                 headers:
                   Authorization: "Bearer $bootstrapApiKey"
@@ -2348,7 +2363,21 @@ function Apply-BootstrapCredentials {
             $mcpMatch = [regex]::Match($config, '(?ms)^mcp_servers:\r?\n(.*?)(?=^\S|\z)')
             if ($mcpMatch.Success) {
                 $body = $mcpMatch.Groups[1].Value
-                $body = [regex]::Replace($body, '(?ms)^  (?:memory|remoteMCP):\r?\n(?:    .*\r?\n)*', '')
+                $legacyServerName = $null
+                try {
+                    if (-not [string]::IsNullOrWhiteSpace($cfgPython)) {
+                        $legacyServerName = (& $cfgPython -c "from hermes_cli.config import SINGLE_MCP_SERVER_NAME; print(SINGLE_MCP_SERVER_NAME)" 2>$null).Trim()
+                    }
+                } catch {}
+                $nameSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                [void]$nameSet.Add("memory")
+                [void]$nameSet.Add($mcpServerName)
+                if (-not [string]::IsNullOrWhiteSpace($legacyServerName)) {
+                    [void]$nameSet.Add($legacyServerName)
+                }
+                $escapedNames = @($nameSet | ForEach-Object { [regex]::Escape($_) })
+                $pattern = '(?ms)^  (?:' + ($escapedNames -join '|') + '):\r?\n(?:    .*\r?\n)*'
+                $body = [regex]::Replace($body, $pattern, '')
                 $newRoot = "mcp_servers:`n$memoryEntry$body"
                 $config = $config.Substring(0, $mcpMatch.Index) + $newRoot + $config.Substring($mcpMatch.Index + $mcpMatch.Length)
             } else {
