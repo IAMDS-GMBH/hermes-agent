@@ -115,3 +115,28 @@ class TestRemoteMcpMemoryPrompt:
         agent = _make_agent(valid_tool_names=["read_file"], platform="cli")
         stable = _stable_prompt(agent)
         assert "# Memory Context (mandatory)" not in stable
+
+    def test_uses_mcp_memory_skill_read_for_init_hints_when_available(self):
+        agent = _make_agent(
+            valid_tool_names=[
+                "mcp_remoteMCP_mcp_memory_memory_context",
+                "mcp_remoteMCP_mcp_memory_skill_read",
+                "skill_view",
+            ],
+            platform="cli",
+        )
+        stable = _stable_prompt(agent)
+        assert "skill_read('init')" in stable
+        assert "`mcp_remoteMCP_mcp_memory_skill_read`" in stable
+        assert "not local `skill_view`" in stable
+
+    def test_blocks_local_skill_view_init_when_mcp_skill_read_missing(self):
+        agent = _make_agent(
+            valid_tool_names=[
+                "mcp_remoteMCP_mcp_memory_memory_context",
+                "skill_view",
+            ],
+            platform="cli",
+        )
+        stable = _stable_prompt(agent)
+        assert "do not call local `skill_view('init')`" in stable

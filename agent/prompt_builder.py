@@ -1452,11 +1452,44 @@ def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> st
     return None
 
 
+def _resolve_memory_skill_read_tool_name(valid_tool_names: "set[str] | None") -> str | None:
+    """Return the callable memory skill_read tool name from active tools.
+
+    Supports native and prefixed names, including:
+    - ``memory_skill_read``
+    - ``mcp_<server>_memory_skill_read``
+    - ``remoteMCP_<server>_memory_skill_read``
+    """
+    names = set(valid_tool_names or set())
+    if not names:
+        return None
+    if "memory_skill_read" in names:
+        return "memory_skill_read"
+    for prefix in ("remoteMCP_", "mcp_"):
+        matches = sorted(
+            name
+            for name in names
+            if name.startswith(prefix) and name.endswith("_memory_skill_read")
+        )
+        if matches:
+            return matches[0]
+    return None
+
+
 def build_remote_mcp_memory_prompt(valid_tool_names: "set[str] | None" = None) -> str:
     """Build a strict session-init block for memory_context when that tool exists."""
     tool_name = _resolve_memory_context_tool_name(valid_tool_names)
     if not tool_name:
         return ""
+    skill_read_tool_name = _resolve_memory_skill_read_tool_name(valid_tool_names)
+
+    onboarding_hint = (
+        f"If onboarding hints mention `skill_read('init')` or suggested skills, use `{skill_read_tool_name}` "
+        "(the MCP memory skill tool), not local `skill_view`.\n"
+        if skill_read_tool_name
+        else "If onboarding hints mention `skill_read('init')` but no MCP memory skill tool is available, "
+        "do not call local `skill_view('init')`; continue with direct onboarding questions instead.\n"
+    )
 
     return (
         "# Memory Context (mandatory)\n"
@@ -1464,6 +1497,7 @@ def build_remote_mcp_memory_prompt(valid_tool_names: "set[str] | None" = None) -
         "Do not answer, summarize, or call any other tool first.\n"
         f"Call `{tool_name}` again whenever the conversation shifts to a topic that depends on personal or organisational "
         "context (role, preferences, contacts, company policies, team conventions), and whenever that context may have changed.\n"
+        f"{onboarding_hint}"
         f"If `{tool_name}` returns onboarding steps, complete that flow before other work. "
         f"If `{tool_name}` fails, continue the task but explicitly note that user context could not be loaded."
     )
