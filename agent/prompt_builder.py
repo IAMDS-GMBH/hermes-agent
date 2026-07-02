@@ -1427,6 +1427,40 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
     return "\n".join(lines)
 
 
+def build_remote_mcp_memory_prompt(valid_tool_names: "set[str] | None" = None) -> str:
+    """Build a session-init enforcement block for the remoteMCP memory_context tool.
+
+    Only emitted when ``memory_context`` is present in the active toolset so the
+    instruction is never shown to sessions where the tool is unavailable — keeping
+    the prompt byte-stable across those sessions (no cache miss).
+
+    The block instructs the agent to:
+      - Call ``memory_context`` at the very start of every session to hydrate
+        user/company context before responding.
+      - Call it again whenever the user switches topic or asks something that may
+        depend on personal or organisational context (role, preferences, company
+        knowledge).
+      - Follow the onboarding interview flow if the tool reports that the user
+        profile is incomplete.
+    """
+    names = set(valid_tool_names or set())
+    if names and "memory_context" not in names:
+        return ""
+
+    return (
+        "# Memory Context (mandatory)\n"
+        "At the very start of this session, before responding to the user's first message, "
+        "call the `memory_context` tool to load the current user's profile and company context. "
+        "Do not skip this call — the tool may return onboarding instructions that must be "
+        "followed (e.g. an interview to learn about a new user) before any other work begins.\n"
+        "Also call `memory_context` again whenever the conversation shifts to a topic that "
+        "depends on personal or organisational context (role, preferences, contacts, company "
+        "policies, team conventions). Use the returned context to personalise every response.\n"
+        "If `memory_context` is unavailable or returns an error, proceed normally but note "
+        "that user context could not be loaded."
+    )
+
+
 # =========================================================================
 # Context files (SOUL.md, AGENTS.md, .cursorrules)
 # =========================================================================
