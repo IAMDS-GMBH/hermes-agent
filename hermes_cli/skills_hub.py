@@ -865,6 +865,13 @@ def do_install(identifier: str, category: str = "", force: bool = False,
             clear_skills_system_prompt_cache(clear_snapshot=True)
         except Exception:
             pass
+        # Refresh /skill slash-command discovery in the current process so newly
+        # installed hub dependencies are immediately callable (e.g. /grilling).
+        try:
+            from agent.skill_commands import scan_skill_commands
+            scan_skill_commands()
+        except Exception:
+            pass
     else:
         c.print("[dim]Skill will be available in your next session.[/]")
         c.print("[dim]Use /reset to start a new session now, or --now to activate immediately (invalidates prompt cache).[/]\n")

@@ -10037,12 +10037,45 @@ def _(rid, params: dict) -> dict:
             refs: set[str] = set()
             fm, body = parse_frontmatter(markdown or "")
             candidates: list[str] = []
-            for key in ("related_skills", "dependencies", "depends_on", "requires", "skills", "subskills"):
-                raw = fm.get(key)
+            metadata = fm.get("metadata")
+            hermes_meta = metadata.get("hermes") if isinstance(metadata, dict) else {}
+
+            def _append_refs(raw: Any) -> None:
                 if isinstance(raw, str):
                     candidates.extend(re.split(r"[\s,]+", raw))
                 elif isinstance(raw, list):
-                    candidates.extend(str(v) for v in raw if v)
+                    for item in raw:
+                        if isinstance(item, str):
+                            candidates.append(item)
+                        elif isinstance(item, dict):
+                            for field in ("identifier", "id", "skill", "name"):
+                                value = item.get(field)
+                                if isinstance(value, str) and value.strip():
+                                    candidates.append(value)
+                                    break
+                        elif isinstance(item, (int, float)):
+                            candidates.append(str(item))
+                elif isinstance(raw, dict):
+                    for field in ("identifier", "id", "skill", "name"):
+                        value = raw.get(field)
+                        if isinstance(value, str) and value.strip():
+                            candidates.append(value)
+                            break
+
+            for key in ("related_skills", "dependencies", "depends_on", "requires", "skills", "subskills"):
+                _append_refs(fm.get(key))
+            if isinstance(hermes_meta, dict):
+                for key in (
+                    "related_skills",
+                    "dependencies",
+                    "depends_on",
+                    "requires_skills",
+                    "skills",
+                    "subskills",
+                    "sub_skills",
+                    "children",
+                ):
+                    _append_refs(hermes_meta.get(key))
             for m in re.finditer(r"(?<![A-Za-z0-9_])/([A-Za-z][A-Za-z0-9_-]{1,63})", body):
                 candidates.append(m.group(1))
             current = _norm_skill_token(current_name)
@@ -10201,8 +10234,9 @@ def _(rid, params: dict) -> dict:
                 logger.warning("[LiteLLM Hub] Failed to record lock entry for %s: %s", install_name_norm, lock_err)
 
             # Resolve in-repo sibling skill references recursively and install them
-            # into hidden .hub directory so they are available for future use but
-            # do not appear in the "From Skill Hub" listing.
+            # into from_skill_hub/deps so slash-skill discovery can load them.
+            # They stay hidden in desktop listing via lock metadata
+            # (`hidden_from_listing: true`).
             hidden_installed: list[str] = []
             hidden_failed: list[str] = []
             try:
@@ -10218,7 +10252,7 @@ def _(rid, params: dict) -> dict:
                     )
                 )
                 visited = {install_name_norm}
-                hidden_root = HUB_SKILLS_DIR / "from_skill_hub" / ".hub" / "deps"
+                hidden_root = HUB_SKILLS_DIR / "from_skill_hub" / "deps"
                 while queue:
                     dep_name = queue.popleft()
                     if dep_name in visited:
