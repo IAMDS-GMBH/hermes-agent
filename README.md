@@ -90,7 +90,6 @@ Open **Skills & Tools** in the left sidebar to enable or disable individual skil
 
 | Skill | Description |
 |---|---|
-| `auto-load-memory-context` | Automatically loads memory context at the start of each session. |
 | `deep-research` | Researches a question across multiple sources, cross-checks claims, and delivers a concise, cited synthesis. Triggered by "research", "find out", or market/competitor intelligence requests. |
 | `digest` | Creates a recurring daily or weekly summary from calendar, inbox, and open tasks. Usable as a cron blueprint (morning-brief / weekly-digest). |
 | `doc-draft` | Creates documents, presentations, and spreadsheets (Word/PPTX/XLSX) from company templates. Use for "create a proposal/minutes/deck/spreadsheet". |

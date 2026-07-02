@@ -51,14 +51,7 @@ NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 # Legacy bundled-skill rename map (old -> new). Used to prevent stale duplicate
 # folders surviving reinstall/update when a bundled skill slug is renamed.
-_SKILL_RENAMES: Tuple[Dict[str, str], ...] = (
-    {
-        "old_rel": "aimds_custom/auto_load_memory_context",
-        "new_rel": "aimds_custom/auto-load-memory-context",
-        "old_name": "auto_load_memory_context",
-        "new_name": "auto-load-memory-context",
-    },
-)
+_SKILL_RENAMES: Tuple[Dict[str, str], ...] = ()
 
 
 def _get_bundled_dir() -> Path:
