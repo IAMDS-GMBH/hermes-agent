@@ -633,6 +633,7 @@ Generate some audio.
 
         assert msg is not None
         assert 'The user has invoked the "grill-me" skill' in msg
+        assert "Do not ask the user to run another slash command" in msg
         assert 'DEPENDENCY SKILL LOADED: "grilling"' in msg
         assert "This is the grilling dependency workflow." in msg
 

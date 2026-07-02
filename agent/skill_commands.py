@@ -618,6 +618,10 @@ def build_skill_invocation_message(
 
     return (
         f"{primary_message}\n\n"
+        "[Execution rule: If the parent skill says to run one of the referenced "
+        "slash skills, treat that as already invoked in this same turn. Do not ask "
+        "the user to run another slash command; execute the referenced instructions "
+        "directly.]\n\n"
         "[Referenced dependency skills are loaded below so you can execute the parent "
         "workflow end-to-end without requiring additional slash commands.]\n\n"
         + "\n\n".join(dependency_blocks)
