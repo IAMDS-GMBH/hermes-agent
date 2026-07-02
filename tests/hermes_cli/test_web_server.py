@@ -3046,6 +3046,106 @@ class TestNewEndpoints:
         assert data["has_category"] is False
         assert data["providers"] == []
 
+    def test_todos_list_shape_and_ordering(self):
+        first = self.client.post("/api/todos", json={"content": "First task"})
+        second = self.client.post("/api/todos", json={"content": "Second task"})
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_item = first.json()
+        second_item = second.json()
+
+        resp = self.client.get("/api/todos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "todos" in data
+        assert isinstance(data["todos"], list)
+        assert len(data["todos"]) == 2
+        assert [item["id"] for item in data["todos"]] == [first_item["id"], second_item["id"]]
+        assert data["todos"][0]["created_at"] <= data["todos"][1]["created_at"]
+        for item in data["todos"]:
+            assert set(item.keys()) == {"id", "content", "status", "created_at", "updated_at", "completed_at"}
+
+    def test_todos_create_success_and_empty_content_validation(self):
+        ok_resp = self.client.post("/api/todos", json={"content": "  ship tests  ", "status": "pending"})
+        assert ok_resp.status_code == 200
+        created = ok_resp.json()
+        assert created["content"] == "ship tests"
+        assert created["status"] == "pending"
+
+        bad_resp = self.client.post("/api/todos", json={"content": "   "})
+        assert bad_resp.status_code == 400
+        assert bad_resp.json()["detail"] == "content is required"
+
+    def test_todos_update_status_and_content_paths(self):
+        created = self.client.post("/api/todos", json={"content": "Initial"}).json()
+        todo_id = created["id"]
+
+        status_resp = self.client.patch(f"/api/todos/{todo_id}", json={"status": "completed"})
+        assert status_resp.status_code == 200
+        status_updated = status_resp.json()
+        assert status_updated["id"] == todo_id
+        assert status_updated["status"] == "completed"
+        assert status_updated["content"] == "Initial"
+        assert status_updated["completed_at"] is not None
+
+        content_resp = self.client.patch(f"/api/todos/{todo_id}", json={"content": "Updated content"})
+        assert content_resp.status_code == 200
+        content_updated = content_resp.json()
+        assert content_updated["id"] == todo_id
+        assert content_updated["content"] == "Updated content"
+        assert content_updated["status"] == "completed"
+
+    def test_todos_toggle_transitions_done_and_undone(self):
+        created = self.client.post("/api/todos", json={"content": "Toggle me"}).json()
+        todo_id = created["id"]
+
+        done_resp = self.client.post(f"/api/todos/{todo_id}/toggle", params={"done": True})
+        assert done_resp.status_code == 200
+        done_item = done_resp.json()
+        assert done_item["status"] == "completed"
+        assert done_item["completed_at"] is not None
+
+        undone_resp = self.client.post(f"/api/todos/{todo_id}/toggle", params={"done": False})
+        assert undone_resp.status_code == 200
+        undone_item = undone_resp.json()
+        assert undone_item["status"] == "pending"
+        assert undone_item["completed_at"] is None
+
+    def test_todos_delete_success_and_not_found(self):
+        created = self.client.post("/api/todos", json={"content": "Delete me"}).json()
+        todo_id = created["id"]
+
+        delete_resp = self.client.delete(f"/api/todos/{todo_id}")
+        assert delete_resp.status_code == 200
+        assert delete_resp.json() == {"ok": True}
+
+        missing_resp = self.client.delete(f"/api/todos/{todo_id}")
+        assert missing_resp.status_code == 404
+        assert missing_resp.json()["detail"] == "Todo not found"
+
+    def test_todos_older_than_one_day_are_hidden(self):
+        import sqlite3
+        import time
+        from hermes_constants import get_hermes_home
+
+        old_item = self.client.post("/api/todos", json={"content": "Old task"}).json()
+        fresh_item = self.client.post("/api/todos", json={"content": "Fresh task"}).json()
+        old_id = old_item["id"]
+
+        db_path = get_hermes_home() / "todos.db"
+        stale_created_at = time.time() - (25 * 60 * 60)
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE todos SET created_at = ?, updated_at = ? WHERE id = ?",
+                (stale_created_at, stale_created_at, old_id),
+            )
+
+        resp = self.client.get("/api/todos")
+        assert resp.status_code == 200
+        ids = [row["id"] for row in resp.json()["todos"]]
+        assert old_id not in ids
+        assert fresh_item["id"] in ids
+
     def test_get_toolset_config_unknown_returns_400(self):
         resp = self.client.get("/api/tools/toolsets/not_a_real_toolset/config")
         assert resp.status_code == 400

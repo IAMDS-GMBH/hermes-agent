@@ -468,6 +468,19 @@ export interface CronJobUpdates {
   schedule?: string
 }
 
+export interface TodoItem {
+  completed_at?: null | number
+  content: string
+  created_at: number
+  id: string
+  status: 'cancelled' | 'completed' | 'in_progress' | 'pending'
+  updated_at: number
+}
+
+export interface TodoListResponse {
+  todos: TodoItem[]
+}
+
 export interface ProfileCreatePayload {
   clone_all?: boolean
   clone_from?: string

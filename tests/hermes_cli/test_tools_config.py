@@ -244,8 +244,8 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
     enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
 
     # Native tools must reappear.
-    for ts in ("terminal", "file", "web", "memory", "clarify",
-               "code_execution", "todo", "skills"):
+    for ts in ("terminal", "file", "web", "memory", "desktop_todos", "clarify",
+               "code_execution", "skills"):
         assert ts in enabled, f"{ts} should be enabled when hermes-cli is listed"
     assert "spotify" not in enabled
 
@@ -517,8 +517,8 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
             "cli": [
                 "browser", "clarify", "code_execution", "cronjob",
                 "delegation", "file", "hermes-cli",  # <-- the culprit
-                "memory", "session_search", "skills", "terminal",
-                "todo", "tts", "vision", "web",
+                "memory", "session_search", "skills", "desktop_todos", "terminal",
+                "tts", "vision", "web",
             ]
         }
     }
@@ -527,7 +527,7 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
     new_selection = {
         "browser", "clarify", "code_execution", "cronjob",
         "delegation", "file", "memory", "session_search",
-        "skills", "terminal", "todo", "tts", "vision", "web",
+        "skills", "desktop_todos", "terminal", "tts", "vision", "web",
     }
 
     with patch("hermes_cli.tools_config.save_config"):

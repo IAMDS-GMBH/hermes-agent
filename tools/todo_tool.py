@@ -2,10 +2,9 @@
 """
 Todo Tool Module - Planning & Task Management
 
-Provides an in-memory task list the agent uses to decompose complex tasks,
-track progress, and maintain focus across long conversations. The state
-lives on the AIAgent instance (one per session) and is re-injected into
-the conversation after context compression events.
+Provides a profile-scoped persistent task list stored in SQLite so todos
+remain available across sessions while preserving the same tool contract.
+The list is re-injected into conversation context after compression events.
 
 Design:
 - Single `todo` tool: provide `todos` param to write, omit to read
@@ -17,6 +16,7 @@ Design:
 import json
 from typing import Dict, Any, List, Optional
 
+from tools.persistent_todo_store import PersistentTodoStore
 
 # Valid status values for todo items
 VALID_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
@@ -35,7 +35,7 @@ _TRUNCATION_MARKER = "… [truncated]"
 
 class TodoStore:
     """
-    In-memory todo list. One instance per AIAgent (one per session).
+    SQLite-backed todo list scoped to the active Hermes profile.
 
     Items are ordered -- list position is priority. Each item has:
       - id: unique string identifier (agent-chosen)
@@ -44,7 +44,7 @@ class TodoStore:
     """
 
     def __init__(self):
-        self._items: List[Dict[str, str]] = []
+        self._store = PersistentTodoStore()
 
     def write(self, todos: List[Dict[str, Any]], merge: bool = False) -> List[Dict[str, str]]:
         """
@@ -55,53 +55,35 @@ class TodoStore:
             merge: if False, replace the entire list. If True, update
                    existing items by id and append new ones.
         """
-        if not merge:
-            # Replace mode: new list entirely
-            self._items = [self._validate(t) for t in self._dedupe_by_id(todos)]
+        normalized: List[Dict[str, str]] = []
+        if merge:
+            existing = {item["id"]: item for item in self._store.read()}
+            for item in self._dedupe_by_id(todos):
+                item_id = str(item.get("id", "")).strip() or "?"
+                current = existing.get(item_id, {"id": item_id, "content": "(no description)", "status": "pending"})
+                content = current["content"]
+                if "content" in item and str(item.get("content", "")).strip():
+                    content = self._cap_content(str(item["content"]).strip())
+                status = current["status"]
+                if "status" in item and str(item.get("status", "")).strip().lower() in VALID_STATUSES:
+                    status = str(item["status"]).strip().lower()
+                normalized.append({"id": item_id, "content": content, "status": status})
         else:
-            # Merge mode: update existing items by id, append new ones
-            existing = {item["id"]: item for item in self._items}
-            for t in self._dedupe_by_id(todos):
-                item_id = str(t.get("id", "")).strip()
-                if not item_id:
-                    continue  # Can't merge without an id
-
-                if item_id in existing:
-                    # Update only the fields the LLM actually provided
-                    if "content" in t and t["content"]:
-                        existing[item_id]["content"] = self._cap_content(str(t["content"]).strip())
-                    if "status" in t and t["status"]:
-                        status = str(t["status"]).strip().lower()
-                        if status in VALID_STATUSES:
-                            existing[item_id]["status"] = status
-                else:
-                    # New item -- validate fully and append to end
-                    validated = self._validate(t)
-                    existing[validated["id"]] = validated
-                    self._items.append(validated)
-            # Rebuild _items preserving order for existing items
-            seen = set()
-            rebuilt = []
-            for item in self._items:
-                current = existing.get(item["id"], item)
-                if current["id"] not in seen:
-                    rebuilt.append(current)
-                    seen.add(current["id"])
-            self._items = rebuilt
-        # Bound total item count so a replayed/oversized list can't grow the
-        # re-injection block without limit. Keep the highest-priority head
-        # (list order is priority).
-        if len(self._items) > MAX_TODO_ITEMS:
-            self._items = self._items[:MAX_TODO_ITEMS]
-        return self.read()
+            for item in self._dedupe_by_id(todos):
+                clean = self._validate(item)
+                clean["content"] = self._cap_content(clean["content"])
+                normalized.append(clean)
+        if len(normalized) > MAX_TODO_ITEMS:
+            normalized = normalized[:MAX_TODO_ITEMS]
+        return self._store.write(normalized, merge=merge)
 
     def read(self) -> List[Dict[str, str]]:
         """Return a copy of the current list."""
-        return [item.copy() for item in self._items]
+        return self._store.read()
 
     def has_items(self) -> bool:
         """Check if there are any items in the list."""
-        return bool(self._items)
+        return self._store.has_items()
 
     def format_for_injection(self) -> Optional[str]:
         """
@@ -110,7 +92,8 @@ class TodoStore:
         Returns a human-readable string to append to the compressed
         message history, or None if the list is empty.
         """
-        if not self._items:
+        items = self._store.read()
+        if not items:
             return None
 
         # Status markers for compact display
@@ -123,10 +106,7 @@ class TodoStore:
 
         # Only inject pending/in_progress items — completed/cancelled ones
         # cause the model to re-do finished work after compression.
-        active_items = [
-            item for item in self._items
-            if item["status"] in {"pending", "in_progress"}
-        ]
+        active_items = [item for item in items if item["status"] in {"pending", "in_progress"}]
         if not active_items:
             return None
 
@@ -240,7 +220,7 @@ def check_todo_requirements() -> bool:
 TODO_SCHEMA = {
     "name": "todo",
     "description": (
-        "Manage your task list for the current session. Use for complex tasks "
+        "Manage your persistent task list across sessions. Use for complex tasks "
         "with 3+ steps or when the user provides multiple tasks. "
         "Call with no parameters to read the current list.\n\n"
         "Writing:\n"
@@ -299,7 +279,7 @@ from tools.registry import registry, tool_error
 
 registry.register(
     name="todo",
-    toolset="todo",
+    toolset="desktop_todos",
     schema=TODO_SCHEMA,
     handler=lambda args, **kw: todo_tool(
         todos=args.get("todos"), merge=args.get("merge", False), store=kw.get("store")),

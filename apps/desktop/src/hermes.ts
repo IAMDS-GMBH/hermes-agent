@@ -38,6 +38,8 @@ import type {
   SessionSearchResponse,
   SkillInfo,
   StatusResponse,
+  TodoItem,
+  TodoListResponse,
   ToolsetConfig,
   ToolsetInfo
 } from '@/types/hermes'
@@ -100,6 +102,8 @@ export type {
   SkillInfo,
   StaleAuxAssignment,
   StatusResponse,
+  TodoItem,
+  TodoListResponse,
   ToolsetConfig,
   ToolsetInfo
 } from '@/types/hermes'
@@ -559,6 +563,19 @@ export function deleteCronJob(jobId: string): Promise<{ ok: boolean }> {
   return window.hermesDesktop.api<{ ok: boolean }>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,
     method: 'DELETE'
+  })
+}
+
+export function getTodos(includeDone = true): Promise<TodoListResponse> {
+  return window.hermesDesktop.api<TodoListResponse>({
+    path: `/api/todos?include_done=${includeDone ? 'true' : 'false'}`
+  })
+}
+
+export function toggleTodo(todoId: string, done: boolean): Promise<TodoItem> {
+  return window.hermesDesktop.api<TodoItem>({
+    path: `/api/todos/${encodeURIComponent(todoId)}/toggle?done=${done ? 'true' : 'false'}`,
+    method: 'POST'
   })
 }
 

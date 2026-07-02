@@ -63,6 +63,7 @@ from hermes_cli.config import (
     redact_key,
 )
 from gateway.status import get_running_pid, read_runtime_status
+from tools.persistent_todo_store import PersistentTodoStore
 from utils import env_var_enabled
 
 try:
@@ -6812,6 +6813,99 @@ async def delete_cron_job(job_id: str, profile: Optional[str] = None):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not removed:
         raise HTTPException(status_code=404, detail="Job not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Persistent TODO endpoints (profile-scoped SQLite store)
+# ---------------------------------------------------------------------------
+
+
+class TodoCreate(BaseModel):
+    content: str
+    status: str = "pending"
+
+
+class TodoUpdate(BaseModel):
+    content: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _todo_store() -> PersistentTodoStore:
+    return PersistentTodoStore(get_hermes_home() / "todos.db")
+
+
+_TODO_MAX_VISIBLE_AGE_SECONDS = 24 * 60 * 60
+
+
+@app.get("/api/todos")
+async def list_todos(include_done: bool = True):
+    items = _todo_store().read_with_meta()
+    min_created_at = time.time() - _TODO_MAX_VISIBLE_AGE_SECONDS
+    items = [row for row in items if float(row.get("created_at", 0.0)) >= min_created_at]
+    if not include_done:
+        items = [row for row in items if row.get("status") != "completed"]
+    return {"todos": items}
+
+
+@app.post("/api/todos")
+async def create_todo(body: TodoCreate):
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+    item = _todo_store().create(content=content, status=body.status)
+    return item
+
+
+@app.patch("/api/todos/{todo_id}")
+async def update_todo(todo_id: str, body: TodoUpdate):
+    store = _todo_store()
+    current = next((item for item in store.read_with_meta() if item.get("id") == todo_id), None)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    if body.status is not None:
+        row = store.set_status(todo_id, body.status)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Todo not found")
+        # If content also changed, apply merge update to keep legacy contract.
+        if body.content is not None:
+            merged = store.write(
+                [{"id": todo_id, "content": body.content, "status": row["status"]}],
+                merge=True,
+            )
+            latest = next((item for item in merged if item.get("id") == todo_id), None)
+            if latest is not None:
+                row = {
+                    **row,
+                    "content": latest.get("content", row["content"]),
+                    "status": latest.get("status", row["status"]),
+                }
+        return row
+    if body.content is not None:
+        merged = store.write([{"id": todo_id, "content": body.content, "status": current["status"]}], merge=True)
+        latest = next((item for item in merged if item.get("id") == todo_id), None)
+        if latest is None:
+            raise HTTPException(status_code=404, detail="Todo not found")
+        meta = next((item for item in store.read_with_meta() if item.get("id") == todo_id), None)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Todo not found")
+        return meta
+    raise HTTPException(status_code=400, detail="No updates provided")
+
+
+@app.post("/api/todos/{todo_id}/toggle")
+async def toggle_todo(todo_id: str, done: bool = True):
+    row = _todo_store().set_status(todo_id, "completed" if done else "pending")
+    if row is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    return row
+
+
+@app.delete("/api/todos/{todo_id}")
+async def delete_todo(todo_id: str):
+    ok = _todo_store().delete(todo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Todo not found")
     return {"ok": True}
 
 

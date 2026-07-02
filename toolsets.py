@@ -42,7 +42,7 @@ _HERMES_CORE_TOOLS = [
     "skills_list", "skill_view", "skill_manage",
     # Browser automation
     # (disabled — browser tools removed from core toolset)
-    # Planning & memory
+    # Tasks & memory
     "todo", "memory",
     # Clarifying questions
     "clarify",
@@ -199,9 +199,9 @@ TOOLSETS = {
         "tools": ["text_to_speech"],
         "includes": []
     },
-    
-    "todo": {
-        "description": "Task planning and tracking for multi-step work",
+
+    "desktop_todos": {
+        "description": "Persistent todo management for the Desktop Todos view",
         "tools": ["todo"],
         "includes": []
     },
@@ -338,7 +338,7 @@ TOOLSETS = {
     # for while pairing on code and drops the rest (messaging, tts, image_gen,
     # spotify, home-assistant, cron, computer-use).
     "coding": {
-        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate",
+        "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todos, memory, delegate",
         "tools": [
             "web_search", "web_extract",
             "terminal", "process", "read_terminal",
@@ -390,7 +390,7 @@ TOOLSETS = {
             "vision_analyze", "image_generate",
             # Skills
             "skills_list", "skill_view", "skill_manage",
-            # Planning & memory
+            # Tasks & memory
             "todo", "memory",
             # Session history search
             "session_search",

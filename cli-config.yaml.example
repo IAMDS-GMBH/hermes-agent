@@ -675,21 +675,21 @@ agent:
 #     cli: [hermes-cli]
 #     telegram: [hermes-telegram]
 #
-#   # Custom: give Telegram only web + terminal + file + planning:
+#   # Custom: give Telegram only web + terminal + file + desktop todos:
 #   platform_toolsets:
-#     telegram: [web, terminal, file, todo]
+#     telegram: [web, terminal, file, desktop_todos]
 #
 #   # Custom: CLI without browser or image gen:
 #   platform_toolsets:
-#     cli: [web, terminal, file, skills, todo, tts, cronjob]
+#     cli: [web, terminal, file, skills, desktop_todos, tts, cronjob]
 #
 #   # Restrictive: Discord gets read-only tools only:
 #   platform_toolsets:
-#     discord: [web, vision, skills, todo]
+#     discord: [web, vision, skills, desktop_todos]
 #
 # If not set, defaults are:
 #   cli:           hermes-cli            (everything + cronjob management)
-#   telegram:      hermes-telegram       (terminal, file, web, vision, image, tts, browser, skills, todo, cronjob, messaging)
+#   telegram:      hermes-telegram       (terminal, file, web, vision, image, tts, browser, skills, desktop_todos, cronjob, messaging)
 #   discord:       hermes-discord        (same as telegram)
 #   whatsapp:      hermes-whatsapp       (same as telegram)
 #   slack:         hermes-slack          (same as telegram)
@@ -758,14 +758,14 @@ platform_toolsets:
 #   skills       - skills_list, skill_view
 #   skills_hub   - skill_hub (search/install/manage from online registries — user-driven only)
 #   moa          - mixture_of_agents  (requires OPENROUTER_API_KEY)
-#   todo         - todo (in-memory task planning, no deps)
+#   desktop_todos - todo (persistent task list across sessions, powers Desktop Todos view)
 #   tts          - text_to_speech  (Edge TTS free, or ELEVENLABS/OPENAI/MINIMAX/MISTRAL key)
 #   cronjob      - cronjob (create/list/update/pause/resume/run/remove scheduled tasks)
 #
 # PRESETS (curated bundles):
 #   hermes-cli       - All of the above except send_message
 #   hermes-telegram  - terminal, file, web, vision, image_gen, tts, browser,
-#                      skills, todo, cronjob, send_message
+#                      skills, desktop_todos, cronjob, send_message
 #   hermes-discord   - Same as hermes-telegram
 #   hermes-whatsapp  - Same as hermes-telegram
 #   hermes-slack     - Same as hermes-telegram
@@ -784,7 +784,7 @@ platform_toolsets:
 #   image_gen    - Image generation with FLUX (image_generate)
 #   skills       - Load skill documents (skills_list, skill_view)
 #   moa          - Mixture of Agents reasoning (mixture_of_agents)
-#   todo         - Task planning and tracking for multi-step work
+#   desktop_todos - Persistent task list (todo tool)
 #   memory       - Persistent memory across sessions (personal notes + user profile)
 #   session_search - Search and recall past conversations (FTS5 + Gemini Flash summarization)
 #   tts          - Text-to-speech (Edge TTS free, ElevenLabs, OpenAI, MiniMax, Mistral)

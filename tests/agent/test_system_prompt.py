@@ -148,3 +148,14 @@ class TestRemoteMcpMemoryPrompt:
         )
         stable = _stable_prompt(agent)
         assert "do not call local `skill_view('init')`" in stable
+
+
+class TestTodoPersistenceGuidance:
+    def test_emits_when_todo_tool_available(self):
+        stable = _stable_prompt(_make_agent(valid_tool_names=["todo"]))
+        assert "Use the `todo` tool as the canonical place to store user todo tasks." in stable
+        assert "power the Desktop Todos view" in stable
+
+    def test_absent_when_todo_tool_missing(self):
+        stable = _stable_prompt(_make_agent(valid_tool_names=["read_file"]))
+        assert "canonical place to store user todo tasks" not in stable

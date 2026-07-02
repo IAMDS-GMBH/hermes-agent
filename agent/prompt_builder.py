@@ -178,6 +178,13 @@ SKILLS_GUIDANCE = (
     "Skills that aren't maintained become liabilities."
 )
 
+TODO_PERSISTENCE_GUIDANCE = (
+    "Use the `todo` tool as the canonical place to store user todo tasks. "
+    "Todos are persistent across sessions and power the Desktop Todos view, "
+    "so prefer `todo` over memory for task tracking. "
+    "When the user asks to add/update/complete a task, update `todo` instead of writing task state to memory."
+)
+
 KANBAN_GUIDANCE = (
     "# Kanban task execution protocol\n"
     "You have been assigned ONE task from "

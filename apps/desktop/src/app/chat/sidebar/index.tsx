@@ -90,7 +90,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { type AppView, ARTIFACTS_ROUTE, HUB_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { type AppView, ARTIFACTS_ROUTE, HUB_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE, TODOS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -114,7 +114,7 @@ const NON_SESSION_LOAD_STEP = 10
 const NEW_SESSION_KBD: readonly string[] =
   typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac') ? ['⌘', 'N'] : ['Ctrl', 'N']
 
-const SIDEBAR_NAV: SidebarNavItem[] = [
+export const SIDEBAR_NAV: SidebarNavItem[] = [
   {
     id: 'new-session',
     label: '',
@@ -133,6 +133,7 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     icon: props => <Codicon name="compass" {...props} />,
     route: HUB_ROUTE
   },
+  { id: 'todos', label: 'Todos', icon: props => <Codicon name="checklist" {...props} />, route: TODOS_ROUTE },
   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
   { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE }
 ]
@@ -793,6 +794,7 @@ export function ChatSidebar({
 
                 const active =
                   (item.id === 'skills' && currentView === 'skills') ||
+                  (item.id === 'todos' && currentView === 'todos') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
                   (item.id === 'artifacts' && currentView === 'artifacts')
 
