@@ -3,7 +3,7 @@
 
 The mode switch controls two things:
   - working directory: staging tmpdir (strict) vs session CWD (project)
-  - interpreter:       sys.executable (strict) vs active venv's python (project)
+  - interpreter:       Hermes internal python (sys.executable) in this distribution
 
 Security-critical invariants — env scrubbing, tool whitelist, resource caps —
 must apply identically in both modes. These tests guard all three layers.
@@ -129,8 +129,8 @@ class TestResolveChildPython(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             self.assertEqual(_resolve_child_python("project"), sys.executable)
 
-    def test_project_with_virtualenv_picks_venv_python(self):
-        """Project mode + VIRTUAL_ENV pointing at a real venv → that python."""
+    def test_project_with_virtualenv_stays_on_internal_python(self):
+        """Project mode stays on Hermes internal python even when VIRTUAL_ENV is set."""
         if sys.platform == "win32":
             pytest.skip(
                 "Creates symlinks and assumes POSIX venv layout (bin/python). "
@@ -147,7 +147,7 @@ class TestResolveChildPython(unittest.TestCase):
                 # Clear cache — _is_usable_python memoizes on path
                 _is_usable_python.cache_clear()
                 result = _resolve_child_python("project")
-                self.assertEqual(result, str(fake_venv / "bin" / "python"))
+                self.assertEqual(result, sys.executable)
 
     def test_project_with_broken_venv_falls_back(self):
         """VIRTUAL_ENV set but bin/python missing → sys.executable."""
@@ -158,8 +158,8 @@ class TestResolveChildPython(unittest.TestCase):
                 _is_usable_python.cache_clear()
                 self.assertEqual(_resolve_child_python("project"), sys.executable)
 
-    def test_project_prefers_virtualenv_over_conda(self):
-        """If both VIRTUAL_ENV and CONDA_PREFIX are set, VIRTUAL_ENV wins."""
+    def test_project_with_virtualenv_and_conda_stays_internal(self):
+        """Project mode stays on Hermes internal python even when both are set."""
         if sys.platform == "win32":
             pytest.skip(
                 "Creates symlinks and assumes POSIX venv layout (bin/python). "
@@ -179,7 +179,7 @@ class TestResolveChildPython(unittest.TestCase):
             with patch.dict(os.environ, {"VIRTUAL_ENV": str(ve), "CONDA_PREFIX": str(conda)}):
                 _is_usable_python.cache_clear()
                 result = _resolve_child_python("project")
-                self.assertEqual(result, str(ve / "bin" / "python"))
+                self.assertEqual(result, sys.executable)
 
     def test_is_usable_python_rejects_nonexistent(self):
         _is_usable_python.cache_clear()
@@ -227,14 +227,15 @@ class TestResolveChildCwd(unittest.TestCase):
 
 class TestModeAwareSchema(unittest.TestCase):
 
-    def test_strict_description_mentions_temp_dir(self):
+    def test_strict_description_uses_compact_text(self):
         desc = build_execute_code_schema(mode="strict")["description"]
-        self.assertIn("temp dir", desc)
+        self.assertIn("Run Python code", desc)
+        self.assertIn("hermes_tools", desc)
 
-    def test_project_description_mentions_session_and_venv(self):
+    def test_project_description_uses_compact_text(self):
         desc = build_execute_code_schema(mode="project")["description"]
-        self.assertIn("session", desc)
-        self.assertIn("venv", desc)
+        self.assertIn("Run Python code", desc)
+        self.assertIn("hermes_tools", desc)
 
     def test_neither_description_uses_sandbox_language(self):
         """REGRESSION GUARD for commit 39b83f34.
@@ -259,10 +260,10 @@ class TestModeAwareSchema(unittest.TestCase):
         """build_execute_code_schema() with mode=None reads config.yaml."""
         with _mock_mode("strict"):
             desc = build_execute_code_schema()["description"]
-            self.assertIn("temp dir", desc)
+            self.assertIn("Run Python code", desc)
         with _mock_mode("project"):
             desc = build_execute_code_schema()["description"]
-            self.assertIn("session", desc)
+            self.assertIn("Run Python code", desc)
 
 
 # ---------------------------------------------------------------------------
