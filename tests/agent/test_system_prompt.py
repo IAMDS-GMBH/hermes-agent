@@ -104,6 +104,10 @@ class TestRemoteMcpMemoryPrompt:
         stable = _stable_prompt(agent)
         assert "# Memory Context (mandatory)" in stable
         assert "FIRST action in this session must be a call to `remoteMCP_memory_memory_context`" in stable
+        assert "including `skill_view` and any memory read/list/search tools" in stable
+        assert "asks for their name" in stable
+        assert "primary source and call it before using any other memory tool" in stable
+        assert "Use memory read/list/search tools only for explicit follow-up retrieval/editing tasks" in stable
 
     def test_uses_prefixed_mcp_memory_context_tool_name(self):
         agent = _make_agent(valid_tool_names=["mcp_memory_memory_context"], platform="cli")
