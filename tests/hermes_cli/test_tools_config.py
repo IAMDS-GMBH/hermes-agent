@@ -250,6 +250,27 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
     assert "spotify" not in enabled
 
 
+def test_get_platform_tools_maps_legacy_todo_key_to_desktop_todos():
+    config = {"platform_toolsets": {"cli": ["web", "todo"]}}
+
+    enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+
+    assert "web" in enabled
+    assert "desktop_todos" in enabled
+
+
+def test_get_platform_tools_migrates_legacy_cli_core_set_to_include_desktop_todos():
+    config = {
+        "platform_toolsets": {
+            "cli": ["web", "terminal", "file", "skills", "memory"]
+        }
+    }
+
+    enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+
+    assert "desktop_todos" in enabled
+
+
 def test_get_platform_tools_composite_only_unchanged():
     """Composite-only config (no configurable in list) must still take the
     else-branch path and produce the full toolset — guards against the new

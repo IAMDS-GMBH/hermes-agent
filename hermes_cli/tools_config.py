@@ -1297,6 +1297,14 @@ def _get_platform_tools(
     """Resolve which individual toolset names are enabled for a platform."""
     from toolsets import HARD_DISABLED_TOOLSETS, resolve_toolset, TOOLSETS
 
+    # Back-compat migration for renamed built-in toolsets. Keep old saved
+    # config values functional, but normalize to canonical keys in-memory so
+    # downstream subset checks and UI behavior stay consistent.
+    legacy_aliases = {
+        "todo": "desktop_todos",
+        "todos": "desktop_todos",
+    }
+
     platform_toolsets = config.get("platform_toolsets") or {}
     toolset_names = platform_toolsets.get(platform)
 
@@ -1311,7 +1319,16 @@ def _get_platform_tools(
 
     # YAML may parse bare numeric names (e.g. ``12306:``) as int.
     # Normalise to str so downstream sorted() never mixes types.
-    toolset_names = [str(ts) for ts in toolset_names]
+    toolset_names = [legacy_aliases.get(str(ts), str(ts)) for ts in toolset_names]
+
+    # Migration: early Desktop Todos builds saved explicit CLI configurable
+    # lists before ``desktop_todos`` existed, so restored configs can look like
+    # the old default core set minus todos. Recover ``desktop_todos`` so the
+    # model keeps the canonical todo surface by default after reinstall/restore.
+    if platform == "cli" and "desktop_todos" not in toolset_names:
+        legacy_default_core = {"web", "terminal", "file", "skills", "memory"}
+        if legacy_default_core.issubset(set(toolset_names)):
+            toolset_names = [*toolset_names, "desktop_todos"]
 
     configurable_keys = {ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS}
     plugin_ts_keys = _get_plugin_toolset_keys()

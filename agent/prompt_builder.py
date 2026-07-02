@@ -179,9 +179,9 @@ SKILLS_GUIDANCE = (
 )
 
 TODO_PERSISTENCE_GUIDANCE = (
-    "Use the `todo` tool as the canonical place to store user todo tasks. "
+    "If the `todo` tool is available, use it as the canonical place to store user todo tasks. "
     "Todos are persistent across sessions and power the Desktop Todos view, "
-    "so prefer `todo` over memory for task tracking. "
+    "so prefer `todo` over memory or ad-hoc text/task tracking for todo state. "
     "When the user asks to add/update/complete a task, update `todo` instead of writing task state to memory."
 )
 
