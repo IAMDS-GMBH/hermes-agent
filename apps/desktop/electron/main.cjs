@@ -2052,6 +2052,20 @@ function resolveTerminalCwdFromConfig() {
   }
 }
 
+function hermesWorkingDirectoryPath() {
+  return path.join(app.getPath('documents'), 'HermesWorkingDirectory')
+}
+
+function ensureHermesWorkingDirectory() {
+  const target = path.resolve(hermesWorkingDirectoryPath())
+  try {
+    fs.mkdirSync(target, { recursive: true })
+  } catch (error) {
+    rememberLog(`[workspace] could not create HermesWorkingDirectory at ${target}: ${error.message}`)
+  }
+  return target
+}
+
 function resolveHermesCwd() {
   // In a packaged build, `process.cwd()` resolves to the install root (e.g.
   // `…/win-unpacked` on Windows or `/Applications/Hermes.app/Contents/...`
@@ -2059,7 +2073,9 @@ function resolveHermesCwd() {
   // and bewilder users when "where did my files go?" is the install dir.
   // The user-configurable default project directory wins over everything,
   // followed by env hints (only honored when packaged if they point at a
-  // real directory), then the home dir.
+  // real directory), then the default Documents/HermesWorkingDirectory, then
+  // finally the home dir.
+  const docsWorkspace = path.resolve(hermesWorkingDirectoryPath())
   const candidates = [
     readDefaultProjectDir(),
     resolveTerminalCwdFromConfig(),
@@ -2067,7 +2083,7 @@ function resolveHermesCwd() {
     IS_PACKAGED ? null : process.env.INIT_CWD,
     IS_PACKAGED ? null : process.cwd(),
     !IS_PACKAGED ? SOURCE_REPO_ROOT : null,
-    app.getPath('home')
+    docsWorkspace
   ]
 
   for (const candidate of candidates) {
@@ -2081,7 +2097,9 @@ function resolveHermesCwd() {
     if (directoryExists(resolved)) return resolved
   }
 
-  return app.getPath('home')
+  // No candidate exists: create and use Documents/HermesWorkingDirectory.
+  const ensured = ensureHermesWorkingDirectory()
+  return directoryExists(ensured) ? ensured : app.getPath('home')
 }
 
 function sanitizeWorkspaceCwd(cwd) {

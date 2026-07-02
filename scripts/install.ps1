@@ -2611,7 +2611,19 @@ function Copy-ConfigTemplates {
     if (Test-Path $configPath) {
         $escapedCwd = $hermesWorkDir -replace '([\\])', '$1$1'
         $config = Get-Content $configPath -Raw -Encoding UTF8
-        $config = $config -replace '(?m)^\s+cwd:.*$', "  cwd: $escapedCwd"
+        $terminalPattern = '(?ms)^terminal:\s*\r?\n(?<body>(?:^[ \t].*(?:\r?\n|$))*)'
+        if ($config -match $terminalPattern) {
+            $terminalBody = $Matches['body']
+            if ($terminalBody -match '(?m)^[ \t]+cwd:.*$') {
+                $updatedBody = $terminalBody -replace '(?m)^[ \t]+cwd:.*$', "  cwd: $escapedCwd"
+            } else {
+                $updatedBody = "  cwd: $escapedCwd`n$terminalBody"
+            }
+            $terminalBlock = "terminal:`n$updatedBody"
+            $config = [System.Text.RegularExpressions.Regex]::Replace($config, $terminalPattern, $terminalBlock, 1)
+        } else {
+            $config = $config.TrimEnd() + "`n`nterminal:`n  cwd: $hermesWorkDir`n"
+        }
         $utf8NoBomCfg = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBomCfg)
     }

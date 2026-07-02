@@ -2087,8 +2087,28 @@ copy_config_templates() {
     # directory rather than repo-relative ".".
     if [ -f "$HERMES_HOME/config.yaml" ]; then
         escaped_cwd=$(printf '%s\n' "$hermes_work_dir" | sed 's/[\/&]/\\&/g')
-        sed -i.bak "s|^  cwd: .*|  cwd: $escaped_cwd|" "$HERMES_HOME/config.yaml" || true
-        rm -f "$HERMES_HOME/config.yaml.bak"
+        if grep -qE '^[[:space:]]+cwd:' "$HERMES_HOME/config.yaml"; then
+            sed -i.bak "s|^  cwd: .*|  cwd: $escaped_cwd|" "$HERMES_HOME/config.yaml" || true
+            rm -f "$HERMES_HOME/config.yaml.bak"
+        elif grep -qE '^terminal:[[:space:]]*$' "$HERMES_HOME/config.yaml"; then
+            awk -v cwd="$hermes_work_dir" '
+                BEGIN { inserted=0 }
+                /^terminal:[[:space:]]*$/ {
+                    print
+                    if (!inserted) {
+                        print "  cwd: " cwd
+                        inserted=1
+                    }
+                    next
+                }
+                { print }
+            ' "$HERMES_HOME/config.yaml" > "$HERMES_HOME/config.yaml.tmp" && mv "$HERMES_HOME/config.yaml.tmp" "$HERMES_HOME/config.yaml"
+        else
+            {
+                printf '\nterminal:\n'
+                printf '  cwd: %s\n' "$hermes_work_dir"
+            } >> "$HERMES_HOME/config.yaml"
+        fi
     fi
 
     # Seed Electron localStorage so Hermes Desktop picks up the working
