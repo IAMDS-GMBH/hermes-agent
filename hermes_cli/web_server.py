@@ -9118,10 +9118,25 @@ class SkillToggle(BaseModel):
 async def get_skills(profile: Optional[str] = None):
     from tools.skills_tool import _find_all_skills
     from hermes_cli.skills_config import get_disabled_skills
-    with _profile_scope(profile):
+    from tools.skills_hub import HubLockFile
+
+    with _profile_scope(profile) as scoped_profile_dir:
         config = load_config()
         disabled = get_disabled_skills(config)
+        lock_path = (
+            (scoped_profile_dir or get_hermes_home()) / "skills" / ".hub" / "lock.json"
+        )
+        try:
+            hidden_from_desktop = {
+                str(entry.get("name", "")).strip()
+                for entry in HubLockFile(lock_path).list_installed()
+                if bool((entry.get("metadata") or {}).get("hidden_from_listing"))
+            }
+        except Exception:
+            hidden_from_desktop = set()
         skills = _find_all_skills(skip_disabled=True)
+    if hidden_from_desktop:
+        skills = [s for s in skills if s.get("name") not in hidden_from_desktop]
     for s in skills:
         s["enabled"] = s["name"] not in disabled
     return skills

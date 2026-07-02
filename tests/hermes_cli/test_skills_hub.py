@@ -404,6 +404,120 @@ def test_do_install_preserves_nested_official_optional_path(
     assert installs == [{"name": "trl-fine-tuning", "category": "mlops/training"}]
 
 
+def test_do_install_recursively_installs_subskills(monkeypatch, tmp_path, hub_env):
+    import tools.skills_hub as hub
+    import tools.skills_guard as guard
+    import hermes_cli.skills_hub as cli_hub
+
+    parent_identifier = "skills-sh/acme/grill/grill-me"
+    dep_identifier = "skills-sh/acme/grill/grilling"
+
+    parent_skill_md = """---
+name: grill-me
+metadata:
+  hermes:
+    subskills:
+      - grilling
+---
+# Grill Me
+"""
+    dep_skill_md = """---
+name: grilling
+---
+# Grilling
+"""
+
+    bundles = {
+        parent_identifier: type("Bundle", (), {
+            "name": "grill-me",
+            "files": {"SKILL.md": parent_skill_md},
+            "source": "skills.sh",
+            "identifier": parent_identifier,
+            "trust_level": "trusted",
+            "metadata": {},
+        })(),
+        dep_identifier: type("Bundle", (), {
+            "name": "grilling",
+            "files": {"SKILL.md": dep_skill_md},
+            "source": "skills.sh",
+            "identifier": dep_identifier,
+            "trust_level": "trusted",
+            "metadata": {},
+        })(),
+    }
+
+    class _Source:
+        def inspect(self, identifier):
+            bundle = bundles.get(identifier)
+            if not bundle:
+                return None
+            return type("Meta", (), {"extra": {}, "identifier": bundle.identifier})()
+
+        def fetch(self, identifier):
+            return bundles.get(identifier)
+
+    install_calls = []
+    q_root = tmp_path / "skills" / ".hub" / "quarantine"
+    q_root.mkdir(parents=True)
+
+    def _quarantine_bundle(bundle):
+        p = q_root / f"{bundle.name}-{len(install_calls)}"
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "SKILL.md").write_text(bundle.files["SKILL.md"])
+        return p
+
+    class _Lock:
+        def __init__(self):
+            self._installed = {}
+
+        def get_installed(self, name):
+            return self._installed.get(name)
+
+    lock = _Lock()
+
+    def _install_from_quarantine(q, name, category, bundle, result):
+        install_calls.append(
+            {
+                "name": name,
+                "category": category,
+                "metadata": dict(getattr(bundle, "metadata", {}) or {}),
+            }
+        )
+        lock._installed[name] = {"install_path": f"{category}/{name}" if category else name}
+        install_dir = tmp_path / "skills" / (f"{category}/" if category else "") / name
+        install_dir.mkdir(parents=True, exist_ok=True)
+        return install_dir
+
+    monkeypatch.setattr(hub, "ensure_hub_dirs", lambda: None)
+    monkeypatch.setattr(hub, "create_source_router", lambda auth: [_Source()])
+    monkeypatch.setattr(hub, "quarantine_bundle", _quarantine_bundle)
+    monkeypatch.setattr(hub, "install_from_quarantine", _install_from_quarantine)
+    monkeypatch.setattr(hub, "HubLockFile", lambda: lock)
+    monkeypatch.setattr(
+        guard,
+        "scan_skill",
+        lambda skill_path, source="community": guard.ScanResult(
+            skill_name="pending", source=source, trust_level="community", verdict="safe"
+        ),
+    )
+    monkeypatch.setattr(guard, "format_scan_report", lambda result: "scan ok")
+    monkeypatch.setattr(guard, "should_allow_install", lambda result, force=False: (True, "ok"))
+    monkeypatch.setattr(
+        cli_hub,
+        "_resolve_short_name",
+        lambda name, sources, console: dep_identifier if name == "grilling" else "",
+    )
+
+    sink = StringIO()
+    console = Console(file=sink, force_terminal=False, color_system=None)
+    do_install(parent_identifier, console=console, skip_confirm=True)
+
+    assert [c["name"] for c in install_calls] == ["grill-me", "grilling"]
+    assert install_calls[1]["category"] == "from_skill_hub/deps"
+    assert install_calls[1]["metadata"]["hidden_from_listing"] is True
+    assert install_calls[1]["metadata"]["dependency_of"] == ["grill-me"]
+
+
 # ---------------------------------------------------------------------------
 # UrlSource-specific install paths: --name override, interactive prompts,
 # non-interactive error, existing-category scan.
@@ -780,4 +894,3 @@ def test_do_search_json_flag_emits_full_identifiers(capsys):
     assert payload[0]["source"] == "browse-sh"
     # Table render must be suppressed — sink should be empty (no "Searching for:" header).
     assert "Searching for:" not in sink.getvalue()
-

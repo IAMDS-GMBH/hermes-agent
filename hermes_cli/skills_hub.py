@@ -14,7 +14,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from rich.console import Console
 from rich.panel import Panel
@@ -143,6 +143,116 @@ def _derive_category_from_install_path(install_path: str) -> str:
     path = Path(install_path)
     parent = str(path.parent)
     return "" if parent == "." else parent
+
+
+def _as_skill_dependency_list(value: Any) -> List[str]:
+    """Normalize frontmatter dependency values to a flat list of strings."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        out: List[str] = []
+        for item in value:
+            if isinstance(item, str):
+                candidate = item.strip()
+                if candidate:
+                    out.append(candidate)
+            elif isinstance(item, dict):
+                for key in ("identifier", "id", "skill", "name"):
+                    raw = item.get(key)
+                    if isinstance(raw, str) and raw.strip():
+                        out.append(raw.strip())
+                        break
+            elif isinstance(item, (int, float)):
+                out.append(str(item).strip())
+        return out
+    if isinstance(value, dict):
+        for key in ("identifier", "id", "skill", "name"):
+            raw = value.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return [raw.strip()]
+    return []
+
+
+def _extract_subskill_dependencies(bundle) -> List[str]:
+    """Extract dependency skill references from SKILL.md frontmatter."""
+    from agent.skill_utils import parse_frontmatter
+
+    skill_md = bundle.files.get("SKILL.md")
+    if not skill_md:
+        return []
+    if isinstance(skill_md, bytes):
+        skill_md = skill_md.decode("utf-8", errors="replace")
+    if not isinstance(skill_md, str):
+        return []
+
+    frontmatter, _ = parse_frontmatter(skill_md)
+    if not isinstance(frontmatter, dict):
+        return []
+
+    metadata = frontmatter.get("metadata")
+    hermes_meta: Dict[str, Any] = {}
+    if isinstance(metadata, dict):
+        raw_hermes = metadata.get("hermes")
+        if isinstance(raw_hermes, dict):
+            hermes_meta = raw_hermes
+
+    candidates: List[str] = []
+    for key in (
+        "subskills",
+        "sub_skills",
+        "subskills_install",
+        "dependencies",
+        "depends_on_skills",
+        "requires_skills",
+        "children",
+        "related_skills",
+    ):
+        candidates.extend(_as_skill_dependency_list(hermes_meta.get(key)))
+    # Backward compatibility: top-level related_skills/dependencies.
+    candidates.extend(_as_skill_dependency_list(frontmatter.get("related_skills")))
+    candidates.extend(_as_skill_dependency_list(frontmatter.get("dependencies")))
+
+    seen: Set[str] = set()
+    out: List[str] = []
+    own_name = str(getattr(bundle, "name", "") or "").strip().lower()
+    for ref in candidates:
+        cleaned = ref.strip()
+        if not cleaned:
+            continue
+        if own_name and cleaned.lower() == own_name:
+            continue
+        if cleaned.lower() in seen:
+            continue
+        seen.add(cleaned.lower())
+        out.append(cleaned)
+    return out
+
+
+def _normalize_dependency_parents(existing: Any) -> List[str]:
+    if isinstance(existing, str):
+        return [existing.strip()] if existing.strip() else []
+    if isinstance(existing, list):
+        out: List[str] = []
+        for item in existing:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+    return []
+
+
+def _resolve_dependency_identifier(
+    dependency_ref: str, sources, console: Console
+) -> str:
+    if "/" in dependency_ref or dependency_ref.lower().startswith(("http://", "https://")):
+        return dependency_ref
+
+    resolved = _resolve_short_name(dependency_ref, sources, console)
+    if resolved:
+        return resolved
+
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +589,9 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
 def do_install(identifier: str, category: str = "", force: bool = False,
                console: Optional[Console] = None, skip_confirm: bool = False,
                invalidate_cache: bool = True,
-               name_override: str = "") -> None:
+               name_override: str = "",
+               _visited: Optional[Set[str]] = None,
+               _dependency_parent: Optional[str] = None) -> None:
     """Fetch, quarantine, scan, confirm, and install a skill.
 
     ``name_override`` lets non-interactive callers (slash commands, gateway,
@@ -497,6 +609,8 @@ def do_install(identifier: str, category: str = "", force: bool = False,
 
     c = console or _console
     ensure_hub_dirs()
+    if _visited is None:
+        _visited = set()
 
     # Resolve which source adapter handles this identifier
     auth = GitHubAuth()
@@ -592,17 +706,41 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         if len(id_parts) >= 3:
             category = "/".join(id_parts[1:-1])
 
+    extra_metadata = dict(getattr(meta, "extra", {}) or {})
+    extra_metadata.update(getattr(bundle, "metadata", {}) or {})
+
     # Check if already installed
     lock = HubLockFile()
     existing = lock.get_installed(bundle.name)
+    if _dependency_parent:
+        existing_parents = _normalize_dependency_parents(extra_metadata.get("dependency_of"))
+        if _dependency_parent not in existing_parents:
+            existing_parents.append(_dependency_parent)
+        extra_metadata["dependency_of"] = sorted(set(existing_parents))
+        extra_metadata["hidden_from_listing"] = True
+        bundle.metadata.update(extra_metadata)
+
     if existing:
+        if _dependency_parent:
+            try:
+                data = lock.load()
+                installed = data.get("installed", {})
+                entry = installed.get(bundle.name)
+                if isinstance(entry, dict):
+                    metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+                    existing_parents = _normalize_dependency_parents(metadata.get("dependency_of"))
+                    if _dependency_parent not in existing_parents:
+                        existing_parents.append(_dependency_parent)
+                    metadata["dependency_of"] = sorted(set(existing_parents))
+                    metadata["hidden_from_listing"] = True
+                    entry["metadata"] = metadata
+                    lock.save(data)
+            except Exception:
+                pass
         c.print(f"[yellow]Warning:[/] '{bundle.name}' is already installed at {existing['install_path']}")
         if not force:
             c.print("Use --force to reinstall.\n")
             return
-
-    extra_metadata = dict(getattr(meta, "extra", {}) or {})
-    extra_metadata.update(getattr(bundle, "metadata", {}) or {})
 
     # Quarantine the bundle
     try:
@@ -691,6 +829,34 @@ def do_install(identifier: str, category: str = "", force: bool = False,
     from tools.skills_hub import SKILLS_DIR
     c.print(f"[bold green]Installed:[/] {install_dir.relative_to(SKILLS_DIR)}")
     c.print(f"[dim]Files: {', '.join(bundle.files.keys())}[/]\n")
+
+    installed_key = str(getattr(bundle, "identifier", "") or identifier)
+    if installed_key:
+        _visited.add(installed_key)
+
+    dependency_refs = _extract_subskill_dependencies(bundle)
+    if dependency_refs:
+        c.print(f"[dim]Installing {len(dependency_refs)} sub-skill(s) for '{bundle.name}'...[/]")
+    for dependency_ref in dependency_refs:
+        dep_identifier = _resolve_dependency_identifier(dependency_ref, sources, c)
+        if not dep_identifier:
+            c.print(
+                f"[yellow]Skipping sub-skill '{dependency_ref}': could not resolve a unique identifier.[/]"
+            )
+            continue
+        if dep_identifier in _visited:
+            continue
+        _visited.add(dep_identifier)
+        do_install(
+            dep_identifier,
+            category="from_skill_hub/deps",
+            force=force,
+            console=c,
+            skip_confirm=True,
+            invalidate_cache=False,
+            _visited=_visited,
+            _dependency_parent=bundle.name,
+        )
 
     if invalidate_cache:
         # Invalidate the skills prompt cache so the new skill appears immediately

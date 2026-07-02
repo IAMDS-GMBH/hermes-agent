@@ -2876,6 +2876,49 @@ class TestNewEndpoints:
             },
         ]
 
+    def test_skills_list_hides_hidden_hub_dependencies(self, monkeypatch):
+        import tools.skills_tool as skills_tool
+        import hermes_cli.skills_config as skills_config
+        import hermes_cli.web_server as web_server
+        import tools.skills_hub as skills_hub
+
+        monkeypatch.setattr(
+            skills_tool,
+            "_find_all_skills",
+            lambda **_kwargs: [
+                {"name": "grill-me", "description": "root", "category": "demo"},
+                {"name": "grilling", "description": "dep", "category": "from_skill_hub/deps"},
+            ],
+        )
+        monkeypatch.setattr(skills_config, "get_disabled_skills", lambda config: set())
+        monkeypatch.setattr(web_server, "load_config", lambda: {"skills": {"disabled": []}})
+        monkeypatch.setattr(
+            skills_hub,
+            "HubLockFile",
+            lambda path=None: type(
+                "Lock",
+                (),
+                {
+                    "list_installed": lambda self: [
+                        {"name": "grilling", "metadata": {"hidden_from_listing": True}},
+                        {"name": "grill-me", "metadata": {}},
+                    ]
+                },
+            )(),
+        )
+
+        resp = self.client.get("/api/skills")
+
+        assert resp.status_code == 200
+        assert resp.json() == [
+            {
+                "name": "grill-me",
+                "description": "root",
+                "category": "demo",
+                "enabled": True,
+            }
+        ]
+
     def test_toolsets_list(self):
         resp = self.client.get("/api/tools/toolsets")
         assert resp.status_code == 200
