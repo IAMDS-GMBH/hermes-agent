@@ -118,11 +118,11 @@ def seed(db_path: str, workspace_cwd: str) -> None:
         f.write(manifest_record)
 
     # CURRENT — points to our MANIFEST
-    with open(os.path.join(db_path, "CURRENT"), "w", newline="\n") as f:
+    with open(os.path.join(db_path, "CURRENT"), "w", encoding="utf-8", newline="\n") as f:
         f.write("MANIFEST-000002\n")
 
     # LOCK — empty file, signals database ownership
-    open(os.path.join(db_path, "LOCK"), "w").close()
+    open(os.path.join(db_path, "LOCK"), "w", encoding="utf-8").close()
 
 
 if __name__ == "__main__":
