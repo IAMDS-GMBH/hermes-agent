@@ -96,3 +96,22 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestRemoteMcpMemoryPrompt:
+    def test_uses_prefixed_remote_mcp_memory_context_tool_name(self):
+        agent = _make_agent(valid_tool_names=["remoteMCP_memory_memory_context"], platform="cli")
+        stable = _stable_prompt(agent)
+        assert "# Memory Context (mandatory)" in stable
+        assert "FIRST action in this session must be a call to `remoteMCP_memory_memory_context`" in stable
+
+    def test_uses_prefixed_mcp_memory_context_tool_name(self):
+        agent = _make_agent(valid_tool_names=["mcp_memory_memory_context"], platform="cli")
+        stable = _stable_prompt(agent)
+        assert "# Memory Context (mandatory)" in stable
+        assert "FIRST action in this session must be a call to `mcp_memory_memory_context`" in stable
+
+    def test_not_emitted_when_memory_context_tool_missing(self):
+        agent = _make_agent(valid_tool_names=["read_file"], platform="cli")
+        stable = _stable_prompt(agent)
+        assert "# Memory Context (mandatory)" not in stable

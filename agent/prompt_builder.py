@@ -1427,37 +1427,45 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
     return "\n".join(lines)
 
 
-def build_remote_mcp_memory_prompt(valid_tool_names: "set[str] | None" = None) -> str:
-    """Build a session-init enforcement block for the remoteMCP memory_context tool.
+def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> str | None:
+    """Return the callable memory_context tool name from active tools.
 
-    Only emitted when ``memory_context`` is present in the active toolset so the
-    instruction is never shown to sessions where the tool is unavailable — keeping
-    the prompt byte-stable across those sessions (no cache miss).
-
-    The block instructs the agent to:
-      - Call ``memory_context`` at the very start of every session to hydrate
-        user/company context before responding.
-      - Call it again whenever the user switches topic or asks something that may
-        depend on personal or organisational context (role, preferences, company
-        knowledge).
-      - Follow the onboarding interview flow if the tool reports that the user
-        profile is incomplete.
+    Supports native and prefixed names, including:
+    - ``memory_context``
+    - ``mcp_<server>_memory_context``
+    - ``remoteMCP_<server>_memory_context``
     """
     names = set(valid_tool_names or set())
-    if names and "memory_context" not in names:
+    if not names:
+        return None
+    if "memory_context" in names:
+        return "memory_context"
+    # Prefer remoteMCP-prefixed names first, then generic mcp_.
+    for prefix in ("remoteMCP_", "mcp_"):
+        matches = sorted(
+            name
+            for name in names
+            if name.startswith(prefix) and name.endswith("_memory_context")
+        )
+        if matches:
+            return matches[0]
+    return None
+
+
+def build_remote_mcp_memory_prompt(valid_tool_names: "set[str] | None" = None) -> str:
+    """Build a strict session-init block for memory_context when that tool exists."""
+    tool_name = _resolve_memory_context_tool_name(valid_tool_names)
+    if not tool_name:
         return ""
 
     return (
         "# Memory Context (mandatory)\n"
-        "At the very start of this session, before responding to the user's first message, "
-        "call the `memory_context` tool to load the current user's profile and company context. "
-        "Do not skip this call — the tool may return onboarding instructions that must be "
-        "followed (e.g. an interview to learn about a new user) before any other work begins.\n"
-        "Also call `memory_context` again whenever the conversation shifts to a topic that "
-        "depends on personal or organisational context (role, preferences, contacts, company "
-        "policies, team conventions). Use the returned context to personalise every response.\n"
-        "If `memory_context` is unavailable or returns an error, proceed normally but note "
-        "that user context could not be loaded."
+        f"Before any reply to the user's first message, your FIRST action in this session must be a call to `{tool_name}`. "
+        "Do not answer, summarize, or call any other tool first.\n"
+        f"Call `{tool_name}` again whenever the conversation shifts to a topic that depends on personal or organisational "
+        "context (role, preferences, contacts, company policies, team conventions), and whenever that context may have changed.\n"
+        f"If `{tool_name}` returns onboarding steps, complete that flow before other work. "
+        f"If `{tool_name}` fails, continue the task but explicitly note that user context could not be loaded."
     )
 
 
