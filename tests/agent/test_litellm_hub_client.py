@@ -74,6 +74,20 @@ def test_resolve_hub_settings_prefers_iamds_key_over_config_key(monkeypatch):
     assert settings["api_key"] == "iamds-key"
 
 
+def test_resolve_hub_settings_prefers_env_file_over_stale_process_env(monkeypatch):
+    monkeypatch.setenv("IAMDS_LITELLM_API_KEY", "stale-process-key")
+    monkeypatch.delenv("LITELLM_KEY", raising=False)
+
+    cfg = {"skills": {"litellm_hub": {"api_key": "stale-config-key"}}}
+    with (
+        patch("hermes_cli.config.load_config", return_value=cfg),
+        patch("hermes_cli.config.load_env", return_value={"IAMDS_LITELLM_API_KEY": "file-key"}),
+    ):
+        settings = resolve_litellm_hub_settings()
+
+    assert settings["api_key"] == "file-key"
+
+
 def test_resolve_hub_settings_does_not_fallback_to_openai_or_provider_key(monkeypatch):
     monkeypatch.delenv("IAMDS_LITELLM_API_KEY", raising=False)
     monkeypatch.delenv("LITELLM_KEY", raising=False)
