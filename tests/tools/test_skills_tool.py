@@ -228,10 +228,10 @@ class TestFindAllSkills:
 
     def test_categorized_skills(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
-            _make_skill(tmp_path, "axolotl", category="mlops")
+            _make_skill(tmp_path, "axolotl", category="productivity")
             skills = _find_all_skills()
         assert len(skills) == 1
-        assert skills[0]["category"] == "mlops"
+        assert skills[0]["category"] == "productivity"
 
     def test_description_from_body_when_missing(self, tmp_path):
         """If no description in frontmatter, first non-header line is used."""

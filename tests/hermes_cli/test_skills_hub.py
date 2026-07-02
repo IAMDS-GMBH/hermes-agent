@@ -514,7 +514,7 @@ name: grilling
 
     assert [c["name"] for c in install_calls] == ["grill-me", "grilling"]
     assert install_calls[1]["category"] == "from_skill_hub/deps"
-    assert install_calls[1]["metadata"]["hidden_from_listing"] is True
+    assert "hidden_from_listing" not in install_calls[1]["metadata"]
     assert install_calls[1]["metadata"]["dependency_of"] == ["grill-me"]
 
 

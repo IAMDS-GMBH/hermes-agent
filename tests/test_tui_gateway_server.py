@@ -932,7 +932,7 @@ name: grilling
         assert result["dependencies_installed"] == ["grilling"]
         assert (home / "skills" / "from_skill_hub" / "deps" / "grilling" / "SKILL.md").exists()
         assert lock.entries["grilling"]["install_path"] == "from_skill_hub/deps/grilling"
-        assert lock.entries["grilling"]["metadata"]["hidden_from_listing"] is True
+        assert "hidden_from_listing" not in lock.entries["grilling"]["metadata"]
     finally:
         reset_hermes_home_override(token)
 

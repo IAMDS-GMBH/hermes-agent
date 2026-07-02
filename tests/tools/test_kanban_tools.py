@@ -47,11 +47,12 @@ def test_kanban_tools_visible_with_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(home))
 
     import tools.kanban_tools  # ensure registered
-    from tools.registry import invalidate_check_fn_cache, registry
-    from toolsets import resolve_toolset
+    from model_tools import _clear_tool_defs_cache, get_tool_definitions
+    from tools.registry import invalidate_check_fn_cache
 
     invalidate_check_fn_cache()
-    schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
+    _clear_tool_defs_cache()
+    schema = get_tool_definitions(enabled_toolsets=["hermes-cli"], quiet_mode=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
     kanban = {n for n in names if n and n.startswith("kanban_")}
     expected = {
@@ -126,11 +127,12 @@ def test_kanban_tools_visible_with_toolset_config(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(home))
 
     import tools.kanban_tools  # ensure registered
-    from tools.registry import invalidate_check_fn_cache, registry
-    from toolsets import resolve_toolset
+    from model_tools import _clear_tool_defs_cache, get_tool_definitions
+    from tools.registry import invalidate_check_fn_cache
 
     invalidate_check_fn_cache()
-    schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
+    _clear_tool_defs_cache()
+    schema = get_tool_definitions(enabled_toolsets=["kanban"], quiet_mode=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
     kanban = {n for n in names if n and n.startswith("kanban_")}
     expected = {

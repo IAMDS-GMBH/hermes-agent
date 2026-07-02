@@ -27,6 +27,8 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 
 Download the **Hermes installer** (`.dmg` on macOS, `.exe` on Windows) from the link provided by your IAMDS contact.
 
+For scripted/manual Windows installs, use `scripts/install.ps1`.
+
 **1. Welcome screen** — click **Install Hermes** to begin. The installer sets everything up in the background.
 
 <p align="center">

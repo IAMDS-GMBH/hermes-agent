@@ -717,7 +717,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         if _dependency_parent not in existing_parents:
             existing_parents.append(_dependency_parent)
         extra_metadata["dependency_of"] = sorted(set(existing_parents))
-        extra_metadata["hidden_from_listing"] = True
+        extra_metadata.pop("hidden_from_listing", None)
         bundle.metadata.update(extra_metadata)
 
     if existing:
@@ -732,7 +732,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
                     if _dependency_parent not in existing_parents:
                         existing_parents.append(_dependency_parent)
                     metadata["dependency_of"] = sorted(set(existing_parents))
-                    metadata["hidden_from_listing"] = True
+                    metadata.pop("hidden_from_listing", None)
                     entry["metadata"] = metadata
                     lock.save(data)
             except Exception:

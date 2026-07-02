@@ -89,7 +89,10 @@ def test_outlook_read_emails_auto_enables_when_token_ready(monkeypatch):
         lambda: {"tenant_id": "tenant", "client_id": "client", "client_secret": ""},
     )
     monkeypatch.setattr(outlook_tool, "_has_valid_token_cache", lambda: True)
-    monkeypatch.setattr(outlook_tool, "_fetch_emails_async", lambda *args, **kwargs: [])
+    async def _fetch_emails_async(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(outlook_tool, "_fetch_emails_async", _fetch_emails_async)
 
     enable_calls = {"count": 0}
 

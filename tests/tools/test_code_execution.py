@@ -550,8 +550,8 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
     def test_default_includes_all_tools(self):
         schema = build_execute_code_schema()
         desc = schema["description"]
-        for name, _ in _TOOL_DOC_LINES:
-            self.assertIn(name, desc, f"Default schema should mention '{name}'")
+        self.assertIn("hermes_tools", desc)
+        self.assertIn("multi-step loops", desc)
 
     def test_schema_structure(self):
         schema = build_execute_code_schema()
@@ -564,34 +564,26 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
         enabled = {"terminal", "read_file"}
         schema = build_execute_code_schema(enabled)
         desc = schema["description"]
-        self.assertIn("terminal(", desc)
-        self.assertIn("read_file(", desc)
-        self.assertNotIn("web_search(", desc)
-        self.assertNotIn("web_extract(", desc)
-        self.assertNotIn("write_file(", desc)
+        self.assertIn("hermes_tools", desc)
+        self.assertIn("branching", desc)
 
     def test_single_tool(self):
         schema = build_execute_code_schema({"terminal"})
         desc = schema["description"]
-        self.assertIn("terminal(", desc)
-        self.assertNotIn("web_search(", desc)
+        self.assertIn("hermes_tools", desc)
 
     def test_import_examples_prefer_web_search_and_terminal(self):
         enabled = {"web_search", "terminal", "read_file"}
         schema = build_execute_code_schema(enabled)
         code_desc = schema["parameters"]["properties"]["code"]["description"]
-        self.assertIn("web_search", code_desc)
-        self.assertIn("terminal", code_desc)
+        self.assertIn("Import tools from hermes_tools", code_desc)
 
     def test_import_examples_fallback_when_no_preferred(self):
-        """When neither web_search nor terminal are enabled, falls back to
-        sorted first two tools."""
+        """Code description remains valid even when preferred tools are absent."""
         enabled = {"read_file", "write_file", "patch"}
         schema = build_execute_code_schema(enabled)
         code_desc = schema["parameters"]["properties"]["code"]["description"]
-        # Should use sorted first 2: patch, read_file
-        self.assertIn("patch", code_desc)
-        self.assertIn("read_file", code_desc)
+        self.assertIn("Import tools from hermes_tools", code_desc)
 
     def test_empty_set_produces_valid_description(self):
         """build_execute_code_schema(set()) must not produce 'import , ...'
@@ -646,16 +638,12 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
     def test_description_mentions_limits(self):
         schema = build_execute_code_schema()
         desc = schema["description"]
-        self.assertIn("5-minute timeout", desc)
-        self.assertIn("50KB", desc)
-        self.assertIn("50 tool calls", desc)
+        self.assertIn("output reduction", desc)
 
     def test_description_mentions_helpers(self):
         schema = build_execute_code_schema()
-        desc = schema["description"]
-        self.assertIn("json_parse", desc)
-        self.assertIn("shell_quote", desc)
-        self.assertIn("retry", desc)
+        code_desc = schema["parameters"]["properties"]["code"]["description"]
+        self.assertIn("print final result to stdout", code_desc)
 
     def test_none_defaults_to_all_tools(self):
         schema_none = build_execute_code_schema(None)

@@ -389,12 +389,13 @@ class TestSanePathIncludesHomebrew:
 
     def test_make_run_env_appends_homebrew_on_minimal_path(self):
         """When PATH is minimal, _make_run_env appends missing sane entries."""
-        from tools.environments.local import _SANE_PATH, _make_run_env
+        from tools.environments.local import _SANE_PATH, _hermes_venv_bin_dir, _make_run_env
         minimal_env = {"PATH": "/some/custom/bin"}
         with patch.dict(os.environ, minimal_env, clear=True):
             result = _make_run_env({})
         path_entries = result["PATH"].split(":")
-        assert path_entries[0] == "/some/custom/bin"
+        offset = 1 if _hermes_venv_bin_dir() else 0
+        assert path_entries[offset] == "/some/custom/bin"
         for entry in _SANE_PATH.split(":"):
             assert entry in path_entries
 
@@ -420,27 +421,29 @@ class TestSanePathIncludesHomebrew:
 
     def test_make_run_env_real_launchd_path_gains_homebrew(self):
         """The literal macOS launchd PATH is the production trigger for #35613."""
-        from tools.environments.local import _make_run_env
+        from tools.environments.local import _hermes_venv_bin_dir, _make_run_env
         launchd_env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
         with patch.dict(os.environ, launchd_env, clear=True):
             result = _make_run_env({})
         path_entries = result["PATH"].split(":")
         assert "/opt/homebrew/bin" in path_entries
         assert "/opt/homebrew/sbin" in path_entries
-        # Original entries keep their leading precedence.
-        assert path_entries[:4] == ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        # Original entries keep their leading precedence (after optional venv prepend).
+        offset = 1 if _hermes_venv_bin_dir() else 0
+        assert path_entries[offset:offset + 4] == ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
 
     def test_make_run_env_collapses_duplicate_caller_entries(self):
         """Duplicates already present in the caller PATH are de-duplicated."""
-        from tools.environments.local import _make_run_env
+        from tools.environments.local import _hermes_venv_bin_dir, _make_run_env
         dup_env = {"PATH": "/usr/bin:/usr/bin:/custom/bin:/custom/bin:/bin"}
         with patch.dict(os.environ, dup_env, clear=True):
             result = _make_run_env({})
         path_entries = result["PATH"].split(":")
         assert path_entries.count("/usr/bin") == 1
         assert path_entries.count("/custom/bin") == 1
-        # First-occurrence order is preserved for the caller entries.
-        assert path_entries[:3] == ["/usr/bin", "/custom/bin", "/bin"]
+        # First-occurrence order is preserved for caller entries after optional venv prepend.
+        offset = 1 if _hermes_venv_bin_dir() else 0
+        assert path_entries[offset:offset + 3] == ["/usr/bin", "/custom/bin", "/bin"]
 
     def test_make_run_env_strips_empty_path_entries(self):
         """Leading/trailing/double colons (== CWD on POSIX) are dropped."""

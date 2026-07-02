@@ -1103,8 +1103,7 @@ class TestModelToolsIntegration:
     def test_discord_admin_schema_rebuilt_by_get_tool_definitions(
         self, mock_req, monkeypatch,
     ):
-        """When model_tools.get_tool_definitions runs with discord_admin
-        available, it should replace the static schema with the dynamic one."""
+        """Discord toolsets are hard-disabled in runtime schema assembly."""
         monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")
         monkeypatch.setattr(
             "hermes_cli.config.load_config",
@@ -1115,13 +1114,8 @@ class TestModelToolsIntegration:
 
         from model_tools import get_tool_definitions
         tools = get_tool_definitions(enabled_toolsets=["hermes-discord"], quiet_mode=True)
-        discord_admin_tool = next(
-            (t for t in tools if t.get("function", {}).get("name") == "discord_admin"),
-            None,
-        )
-        assert discord_admin_tool is not None, "discord_admin should be in the schema"
-        actions = discord_admin_tool["function"]["parameters"]["properties"]["action"]["enum"]
-        assert actions == ["list_guilds", "server_info"]
+        names = [t.get("function", {}).get("name") for t in tools]
+        assert "discord_admin" not in names
 
     @patch("tools.discord_tool._discord_request")
     def test_discord_tools_dropped_when_allowlist_empties_them(

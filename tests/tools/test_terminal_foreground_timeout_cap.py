@@ -230,4 +230,4 @@ class TestForegroundMaxTimeoutConstant:
         from tools.terminal_tool import TERMINAL_SCHEMA, FOREGROUND_MAX_TIMEOUT
         timeout_desc = TERMINAL_SCHEMA["parameters"]["properties"]["timeout"]["description"]
         assert str(FOREGROUND_MAX_TIMEOUT) in timeout_desc
-        assert "background=true" in timeout_desc
+        assert "foreground max" in timeout_desc

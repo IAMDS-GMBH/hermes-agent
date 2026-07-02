@@ -10234,9 +10234,8 @@ def _(rid, params: dict) -> dict:
                 logger.warning("[LiteLLM Hub] Failed to record lock entry for %s: %s", install_name_norm, lock_err)
 
             # Resolve in-repo sibling skill references recursively and install them
-            # into from_skill_hub/deps so slash-skill discovery can load them.
-            # They stay hidden in desktop listing via lock metadata
-            # (`hidden_from_listing: true`).
+            # into from_skill_hub/deps so slash-skill discovery can load them and
+            # they also appear in "From Skill Hub" listings.
             hidden_installed: list[str] = []
             hidden_failed: list[str] = []
             try:
@@ -10320,7 +10319,6 @@ def _(rid, params: dict) -> dict:
                                         "skill_id": dep_name,
                                         "resolved_url": dep_url,
                                         "found_path": dep_path,
-                                        "hidden_from_listing": True,
                                         "dependency_of": install_name_norm,
                                     },
                                 )
