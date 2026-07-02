@@ -25,6 +25,7 @@ _skill_commands_platform: Optional[str] = None
 # Patterns for sanitizing skill names into clean hyphen-separated slugs.
 _SKILL_INVALID_CHARS = re.compile(r"[^a-z0-9-]")
 _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
+_SKILL_SLASH_REF_RE = re.compile(r"(?<![A-Za-z0-9_])/([A-Za-z][A-Za-z0-9_-]{1,63})")
 
 
 def _resolve_skill_commands_platform() -> Optional[str]:
@@ -155,6 +156,106 @@ def _inject_skill_config(loaded_skill: dict[str, Any], parts: list[str]) -> None
         parts.extend(lines)
     except Exception:
         pass  # Non-critical — skill still loads without config injection
+
+
+def _append_skill_ref_candidates(raw: Any, out: list[str]) -> None:
+    if isinstance(raw, str):
+        for token in re.split(r"[\s,]+", raw):
+            token = token.strip()
+            if token:
+                out.append(token)
+        return
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str):
+                token = item.strip()
+                if token:
+                    out.append(token)
+            elif isinstance(item, dict):
+                for field in ("identifier", "id", "skill", "name"):
+                    value = item.get(field)
+                    if isinstance(value, str) and value.strip():
+                        out.append(value.strip())
+                        break
+            elif isinstance(item, (int, float)):
+                out.append(str(item).strip())
+        return
+    if isinstance(raw, dict):
+        for field in ("identifier", "id", "skill", "name"):
+            value = raw.get(field)
+            if isinstance(value, str) and value.strip():
+                out.append(value.strip())
+                break
+
+
+def _extract_dependency_skill_keys(
+    loaded_skill: dict[str, Any], commands: Dict[str, Dict[str, Any]], current_cmd_key: str
+) -> list[str]:
+    """Return dependency skill command keys referenced by a loaded skill."""
+    try:
+        from agent.skill_utils import parse_frontmatter
+    except Exception:
+        return []
+
+    raw_content = str(
+        loaded_skill.get("raw_content") or loaded_skill.get("content") or ""
+    )
+    if not raw_content:
+        return []
+
+    frontmatter, body = parse_frontmatter(raw_content)
+    if not isinstance(frontmatter, dict):
+        frontmatter = {}
+
+    refs: list[str] = []
+    for key in (
+        "related_skills",
+        "dependencies",
+        "depends_on",
+        "requires",
+        "skills",
+        "subskills",
+        "sub_skills",
+        "children",
+    ):
+        _append_skill_ref_candidates(frontmatter.get(key), refs)
+
+    metadata = frontmatter.get("metadata")
+    hermes_meta = metadata.get("hermes") if isinstance(metadata, dict) else {}
+    if isinstance(hermes_meta, dict):
+        for key in (
+            "related_skills",
+            "dependencies",
+            "depends_on",
+            "requires_skills",
+            "skills",
+            "subskills",
+            "sub_skills",
+            "children",
+        ):
+            _append_skill_ref_candidates(hermes_meta.get(key), refs)
+
+    for match in _SKILL_SLASH_REF_RE.finditer(body or ""):
+        refs.append(match.group(1))
+
+    out: list[str] = []
+    seen: set[str] = {current_cmd_key}
+    for raw_ref in refs:
+        ref = str(raw_ref).strip()
+        if not ref:
+            continue
+        if ref.startswith("/"):
+            ref = ref[1:]
+        dep_key = resolve_skill_command_key(ref)
+        if not dep_key:
+            direct = f"/{ref}"
+            dep_key = direct if direct in commands else None
+        if not dep_key or dep_key in seen:
+            continue
+        seen.add(dep_key)
+        out.append(dep_key)
+
+    return out
 
 
 def _build_skill_message(
@@ -475,13 +576,51 @@ def build_skill_invocation_message(
         f'[IMPORTANT: The user has invoked the "{skill_name}" skill, indicating they want '
         "you to follow its instructions. The full skill content is loaded below.]"
     )
-    return _build_skill_message(
+    primary_message = _build_skill_message(
         loaded_skill,
         skill_dir,
         activation_note,
         user_instruction=user_instruction,
         runtime_note=runtime_note,
         session_id=task_id,
+    )
+
+    dependency_blocks: list[str] = []
+    for dep_cmd_key in _extract_dependency_skill_keys(loaded_skill, commands, cmd_key):
+        dep_info = commands.get(dep_cmd_key)
+        if not dep_info:
+            continue
+        dep_loaded = _load_skill_payload(dep_info["skill_dir"], task_id=task_id)
+        if not dep_loaded:
+            continue
+        dep_skill, dep_dir, dep_name = dep_loaded
+        try:
+            from tools.skill_usage import bump_use
+
+            bump_use(dep_name)
+        except Exception:
+            pass
+
+        dependency_blocks.append(
+            _build_skill_message(
+                dep_skill,
+                dep_dir,
+                (
+                    f'[DEPENDENCY SKILL LOADED: "{dep_name}" is referenced by '
+                    f'"{skill_name}". Apply it as supporting guidance when relevant.]'
+                ),
+                session_id=task_id,
+            )
+        )
+
+    if not dependency_blocks:
+        return primary_message
+
+    return (
+        f"{primary_message}\n\n"
+        "[Referenced dependency skills are loaded below so you can execute the parent "
+        "workflow end-to-end without requiring additional slash commands.]\n\n"
+        + "\n\n".join(dependency_blocks)
     )
 
 

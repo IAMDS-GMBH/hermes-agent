@@ -616,6 +616,46 @@ Generate some audio.
         assert msg is not None
         assert 'file_path="<path>"' in msg
 
+    def test_inlines_dependency_skill_referenced_in_body(self, tmp_path):
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(
+                tmp_path,
+                "grill-me",
+                body="Use /grilling for direct heat and timing control.",
+            )
+            _make_skill(
+                tmp_path,
+                "grilling",
+                body="This is the grilling dependency workflow.",
+            )
+            scan_skill_commands()
+            msg = build_skill_invocation_message("/grill-me")
+
+        assert msg is not None
+        assert 'The user has invoked the "grill-me" skill' in msg
+        assert 'DEPENDENCY SKILL LOADED: "grilling"' in msg
+        assert "This is the grilling dependency workflow." in msg
+
+    def test_inlines_dependency_skill_from_metadata_hermes(self, tmp_path):
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(
+                tmp_path,
+                "grill-me",
+                frontmatter_extra=(
+                    "metadata:\n"
+                    "  hermes:\n"
+                    "    related_skills: [grilling]\n"
+                ),
+                body="Parent body.",
+            )
+            _make_skill(tmp_path, "grilling", body="Dependency body.")
+            scan_skill_commands()
+            msg = build_skill_invocation_message("/grill-me")
+
+        assert msg is not None
+        assert 'DEPENDENCY SKILL LOADED: "grilling"' in msg
+        assert "Dependency body." in msg
+
 
 class TestSkillDirectoryHeader:
     """The activation message must expose the absolute skill directory and
