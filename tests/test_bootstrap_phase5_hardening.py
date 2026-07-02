@@ -292,10 +292,15 @@ class TestConfigYamlValidation:
         func_body = func_match.group(1)
         
         # mcp_servers block should have proper indentation
-        # 2 spaces for top level, 4 for nested
+        # 2 spaces for top level, 4 for nested.
+        # Current installer uses a dynamic server name (mcp_name), so accept
+        # either legacy static "memory" or dynamic f-string form.
         if 'mcp_servers:' in func_body:
-            assert '  memory:' in func_body or '    memory:' in func_body, \
-                "mcp_servers block doesn't have proper YAML indentation"
+            assert (
+                'f"  {mcp_name}:\\n"' in func_body
+                or "  memory:" in func_body
+                or "    memory:" in func_body
+            ), "mcp_servers block doesn't have proper YAML indentation"
 
 
 class TestBackwardCompatibilityEdgeCases:
