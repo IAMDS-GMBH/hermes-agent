@@ -454,7 +454,7 @@ class TestBuildPreloadedSkillsPrompt:
 
 class TestBuildSkillInvocationMessage:
     def test_loads_skill_by_stored_path_when_frontmatter_name_differs(self, tmp_path):
-        skill_dir = tmp_path / "mlops" / "audiocraft"
+        skill_dir = tmp_path / "productivity" / "audiocraft"
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(
             """\
