@@ -109,8 +109,8 @@ class TestBashCredentialConsumption:
             "Base URL env var substitution missing"
         assert 'base_url' in content, \
             "base_url substitution not found"
-        assert 'provider: custom' in content, \
-            "custom provider pinning missing for bootstrap base_url"
+        assert 'provider: iamds-litellm' in content, \
+            "iamds-litellm provider pinning missing for bootstrap base_url"
     
     def test_mcp_servers_block_added(self):
         """Verify mcp_servers block is added when Memory API URL provided."""
@@ -121,18 +121,18 @@ class TestBashCredentialConsumption:
             "Memory API URL env var not used"
         assert 'mcp_servers:' in content, \
             "mcp_servers block not found"
-        assert 'memory:' in content, \
-            "memory MCP server not configured"
+        assert 'mcp_server_name' in content or '{mcp_name}' in content, \
+            "dynamic MCP server name configuration not found"
     
     def test_env_file_populated(self):
         """Verify .env file is populated with secrets."""
         install_sh = Path("/Users/gonzalooberreuter/Work/hermes-agent/scripts/install.sh")
         content = install_sh.read_text()
         
-        assert 'OPENAI_API_KEY' in content, \
-            "OPENAI_API_KEY not written to .env"
-        assert 'EMAIL_ADDRESS' in content or 'HERMES_BOOTSTRAP_EMAIL' in content, \
-            "Email configuration not in .env"
+        assert 'IAMDS_LITELLM_API_KEY' in content, \
+            "IAMDS_LITELLM_API_KEY not written to .env"
+        assert 'OPENAI_BASE_URL' in content, \
+            "OPENAI_BASE_URL not written to .env"
     
     def test_backward_compatible_no_env_vars(self):
         """Verify function is backward compatible (skips if no env vars)."""
@@ -202,8 +202,8 @@ class TestPowerShellCredentialConsumption:
             "Base URL env var substitution missing"
         assert 'base_url' in content, \
             "base_url substitution not found"
-        assert 'provider: custom' in content, \
-            "custom provider pinning missing for bootstrap base_url"
+        assert 'provider: iamds-litellm' in content, \
+            "iamds-litellm provider pinning missing for bootstrap base_url"
     
     def test_mcp_servers_block_added(self):
         """Verify mcp_servers block is added when Memory API URL provided."""
@@ -214,18 +214,18 @@ class TestPowerShellCredentialConsumption:
             "Memory API URL env var not used in PowerShell"
         assert 'mcp_servers:' in content, \
             "mcp_servers block not found"
-        assert 'memory:' in content, \
-            "memory MCP server not configured"
+        assert '$mcpServerName' in content or '${mcpServerName}' in content, \
+            "dynamic MCP server name configuration not found"
     
     def test_env_file_populated(self):
         """Verify .env file is populated with secrets."""
         install_ps1 = Path("/Users/gonzalooberreuter/Work/hermes-agent/scripts/install.ps1")
         content = install_ps1.read_text()
         
-        assert 'OPENAI_API_KEY' in content, \
-            "OPENAI_API_KEY not written to .env"
-        assert 'EMAIL_ADDRESS' in content or 'HERMES_BOOTSTRAP_EMAIL' in content, \
-            "Email configuration not in .env"
+        assert 'IAMDS_LITELLM_API_KEY' in content, \
+            "IAMDS_LITELLM_API_KEY not written to .env"
+        assert 'OPENAI_BASE_URL' in content, \
+            "OPENAI_BASE_URL not written to .env"
     
     def test_backward_compatible_no_env_vars(self):
         """Verify function is backward compatible (skips if no env vars)."""
