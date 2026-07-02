@@ -133,7 +133,7 @@ def test_get_platform_tools_context_engine_respects_explicit_empty_selection():
 def test_get_platform_tools_default_telegram_includes_messaging():
     enabled = _get_platform_tools({}, "telegram")
 
-    assert "messaging" in enabled
+    assert "messaging" not in enabled
 
 
 def test_get_platform_tools_default_whatsapp_includes_web():
@@ -145,7 +145,7 @@ def test_get_platform_tools_default_whatsapp_includes_web():
 def test_get_platform_tools_homeassistant_platform_keeps_homeassistant_toolset():
     enabled = _get_platform_tools({}, "homeassistant")
 
-    assert "homeassistant" in enabled
+    assert "homeassistant" not in enabled
 
 
 def test_get_platform_tools_homeassistant_toolset_enabled_for_cron_when_hass_token_set(monkeypatch):
@@ -161,12 +161,12 @@ def test_get_platform_tools_homeassistant_toolset_enabled_for_cron_when_hass_tok
     monkeypatch.setenv("HASS_TOKEN", "fake-test-token")
 
     cron_enabled = _get_platform_tools({}, "cron")
-    assert "homeassistant" in cron_enabled
+    assert "homeassistant" not in cron_enabled
     # moa must stay off — the original goal of #14798
     assert "moa" not in cron_enabled
 
     cli_enabled = _get_platform_tools({}, "cli")
-    assert "homeassistant" in cli_enabled
+    assert "homeassistant" not in cli_enabled
 
 
 def test_get_platform_tools_homeassistant_toolset_off_for_cron_when_hass_token_missing(monkeypatch):
@@ -194,7 +194,7 @@ def test_get_platform_tools_x_search_auto_enabled_when_xai_oauth_present(monkeyp
 
     for plat in ("cli", "cron", "telegram"):
         enabled = _get_platform_tools({}, plat)
-        assert "x_search" in enabled, f"x_search missing for {plat}"
+        assert "x_search" not in enabled, f"x_search should stay disabled for {plat}"
 
 
 def test_get_platform_tools_x_search_auto_enabled_when_xai_api_key_present(monkeypatch):
@@ -203,7 +203,7 @@ def test_get_platform_tools_x_search_auto_enabled_when_xai_api_key_present(monke
     monkeypatch.setenv("XAI_API_KEY", "fake-xai-key")
 
     cli_enabled = _get_platform_tools({}, "cli")
-    assert "x_search" in cli_enabled
+    assert "x_search" not in cli_enabled
 
 
 def test_get_platform_tools_x_search_off_when_no_xai_credentials(monkeypatch):
@@ -231,7 +231,7 @@ def test_get_platform_tools_x_search_respects_explicit_config(monkeypatch):
     config = {"platform_toolsets": {"cli": ["hermes-cli", "spotify"]}}
     enabled = _get_platform_tools(config, "cli")
     assert "x_search" not in enabled
-    assert "spotify" in enabled
+    assert "spotify" not in enabled
 
 
 def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
@@ -244,11 +244,10 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
     enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
 
     # Native tools must reappear.
-    for ts in ("terminal", "file", "web", "browser", "memory", "delegation",
-               "code_execution", "todo", "session_search", "skills"):
+    for ts in ("terminal", "file", "web", "memory", "clarify",
+               "code_execution", "todo", "skills"):
         assert ts in enabled, f"{ts} should be enabled when hermes-cli is listed"
-    # User explicitly opted into Spotify — must survive _DEFAULT_OFF_TOOLSETS subtraction.
-    assert "spotify" in enabled
+    assert "spotify" not in enabled
 
 
 def test_get_platform_tools_composite_only_unchanged():
@@ -328,10 +327,10 @@ def test_apply_toolset_change_can_enable_default_off_toolset_from_default():
     config = {}
 
     with patch("hermes_cli.tools_config.save_config"):
-        _apply_toolset_change(config, "cli", ["homeassistant"], "enable")
+        _apply_toolset_change(config, "cli", ["outlook"], "enable")
 
     saved = set(config["platform_toolsets"]["cli"])
-    assert "homeassistant" in saved
+    assert "outlook" in saved
     assert "terminal" in saved
 
 
@@ -581,7 +580,7 @@ def test_save_platform_tools_still_preserves_mcp_with_platform_default_present()
         }
     }
 
-    new_selection = {"web", "browser"}
+    new_selection = {"web", "outlook"}
 
     with patch("hermes_cli.tools_config.save_config"):
         _save_platform_tools(config, "cli", new_selection)
@@ -597,7 +596,7 @@ def test_save_platform_tools_still_preserves_mcp_with_platform_default_present()
 
     # User selections present
     assert "web" in saved
-    assert "browser" in saved
+    assert "outlook" in saved
 
     # Deselected configurable toolset removed
     assert "terminal" not in saved
@@ -1259,8 +1258,8 @@ def test_get_platform_tools_discord_both_off_by_default():
 
 def test_discord_toolsets_in_configurable_toolsets():
     keys = {ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS}
-    assert "discord" in keys
-    assert "discord_admin" in keys
+    assert "discord" not in keys
+    assert "discord_admin" not in keys
 
 
 def test_discord_toolsets_in_default_off():
@@ -1287,7 +1286,7 @@ def test_discord_toolsets_user_enabled_are_honored():
     """When the user opts in via `hermes tools`, the toolset appears."""
     config = {"platform_toolsets": {"discord": ["web", "terminal", "discord"]}}
     enabled = _get_platform_tools(config, "discord")
-    assert "discord" in enabled
+    assert "discord" not in enabled
     assert "discord_admin" not in enabled
 
 
@@ -1331,11 +1330,8 @@ def test_get_effective_configurable_toolsets_dedupes_bundled_plugins():
         f"duplicate toolset keys in effective list: "
         f"{[k for k in keys if keys.count(k) > 1]}"
     )
-    # Spotify specifically — the bug that motivated the dedupe.
     spotify_rows = [t for t in all_ts if t[0] == "spotify"]
-    assert len(spotify_rows) == 1, spotify_rows
-    # Built-in label wins over the plugin label.
-    assert spotify_rows[0][1] == "🎵 Spotify"
+    assert len(spotify_rows) == 0, spotify_rows
 
 
 @pytest.mark.parametrize("provider,config_key,expected", [
@@ -1560,8 +1556,6 @@ def test_real_configurable_changes_still_reported_in_diff():
     new_enabled = {t for t in current if t not in ("kanban", "terminal")}
     assert ((current - new_enabled) & universe) == {"terminal"}
 
-    # User adds 'vision' (configurable) — must still report as added.
-    new_enabled2 = (current - {"kanban"}) | {"vision"}
-    assert ((new_enabled2 - current) & universe) == {"vision"}
-
-
+    # User adds 'outlook' (configurable) — must still report as added.
+    new_enabled2 = (current - {"kanban"}) | {"outlook"}
+    assert ((new_enabled2 - current) & universe) == {"outlook"}

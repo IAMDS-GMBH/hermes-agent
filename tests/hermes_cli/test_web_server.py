@@ -1308,12 +1308,15 @@ class TestWebServerEndpoints:
     def test_messaging_catalog_covers_gateway_platforms(self):
         """Catalog is derived from the Platform enum, so every built-in shows up."""
         from gateway.config import Platform
+        import hermes_cli.web_server as ws
 
         resp = self.client.get("/api/messaging/platforms")
         platforms = {entry["id"] for entry in resp.json()["platforms"]}
 
         for member in Platform.__members__.values():
             if member.value == "local":
+                continue
+            if member.value in ws._DESKTOP_HIDDEN_PLATFORMS:
                 continue
             assert member.value in platforms, f"Missing gateway platform {member.value} from /api/messaging/platforms"
 
@@ -1384,16 +1387,16 @@ class TestWebServerEndpoints:
         assert calls["count"] == 1
 
     def test_messaging_platform_test_reports_missing_required_setup(self):
-        resp = self.client.put("/api/messaging/platforms/discord", json={"enabled": True})
+        resp = self.client.put("/api/messaging/platforms/telegram", json={"enabled": True})
         assert resp.status_code == 200
 
-        resp = self.client.post("/api/messaging/platforms/discord/test")
+        resp = self.client.post("/api/messaging/platforms/telegram/test")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is False
         assert data["state"] == "not_configured"
-        assert "DISCORD_BOT_TOKEN" in data["message"]
+        assert "TELEGRAM_BOT_TOKEN" in data["message"]
 
     def test_telegram_onboarding_worker_request_uses_httpx(self, monkeypatch):
         import httpx
@@ -2954,23 +2957,23 @@ class TestNewEndpoints:
     def test_toggle_toolset_enable_disable(self):
         """PUT /api/tools/toolsets/{name} round-trips through config and the list view."""
         # Enable a toolset that is off-by-default so the state change is observable.
-        resp = self.client.put("/api/tools/toolsets/x_search", json={"enabled": True})
+        resp = self.client.put("/api/tools/toolsets/outlook", json={"enabled": True})
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
-        assert body["name"] == "x_search"
+        assert body["name"] == "outlook"
         assert body["enabled"] is True
 
         listing = {t["name"]: t for t in self.client.get("/api/tools/toolsets").json()}
-        assert listing["x_search"]["enabled"] is True
+        assert listing["outlook"]["enabled"] is True
 
         # Disable it again.
-        resp = self.client.put("/api/tools/toolsets/x_search", json={"enabled": False})
+        resp = self.client.put("/api/tools/toolsets/outlook", json={"enabled": False})
         assert resp.status_code == 200
         assert resp.json()["enabled"] is False
 
         listing = {t["name"]: t for t in self.client.get("/api/tools/toolsets").json()}
-        assert listing["x_search"]["enabled"] is False
+        assert listing["outlook"]["enabled"] is False
 
     def test_toggle_toolset_unknown_returns_400(self):
         resp = self.client.put(

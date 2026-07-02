@@ -1020,15 +1020,19 @@ class TestToolsConfigEndpoints:
             return _FakeProc()
 
         monkeypatch.setattr(ws, "_spawn_hermes_action", _fake_spawn)
+        monkeypatch.setattr(
+            "hermes_cli.tools_config.valid_post_setup_keys",
+            lambda: {"piper"},
+        )
         r = self.client.post(
-            "/api/tools/toolsets/browser/post-setup",
-            json={"key": "agent_browser"},
+            "/api/tools/toolsets/tts/post-setup",
+            json={"key": "piper"},
         )
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["name"] == "tools-post-setup"
         assert body["pid"] == 4321
-        assert spawned["subcommand"] == ["tools", "post-setup", "agent_browser"]
+        assert spawned["subcommand"] == ["tools", "post-setup", "piper"]
 
     def test_endpoints_require_session_token(self):
         for method, path, payload in [

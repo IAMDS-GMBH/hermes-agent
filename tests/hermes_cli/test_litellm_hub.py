@@ -8,7 +8,7 @@ from hermes_cli.subcommands.litellm_hub import build_litellm_hub_parser
 
 def test_litellm_hub_agents_json(capsys):
     with patch(
-        "hermes_cli.litellm_hub.fetch_litellm_hub_json",
+        "hermes_cli.litellm_hub.fetch_litellm_agents",
         return_value=([{"name": "hello-world-agent", "description": "demo"}], None),
     ):
         code = litellm_hub_command(
@@ -62,4 +62,3 @@ def test_litellm_hub_parser_builds_subcommands():
     assert args.litellm_hub_action == "skills"
     assert args.json is True
     assert args.limit == 5
-

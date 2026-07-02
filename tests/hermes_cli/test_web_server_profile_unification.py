@@ -305,15 +305,15 @@ class TestProfileScopedPostSetup:
         )
         monkeypatch.setattr(
             "hermes_cli.tools_config.valid_post_setup_keys",
-            lambda: {"agent_browser"},
+            lambda: {"piper"},
         )
         resp = client.post(
-            "/api/tools/toolsets/browser/post-setup",
-            json={"key": "agent_browser", "profile": "worker_beta"},
+            "/api/tools/toolsets/tts/post-setup",
+            json={"key": "piper", "profile": "worker_beta"},
         )
         assert resp.status_code == 200
         assert calls == [
-            ["-p", "worker_beta", "tools", "post-setup", "agent_browser"]
+            ["-p", "worker_beta", "tools", "post-setup", "piper"]
         ]
 
     def test_post_setup_without_profile_keeps_legacy_argv(
@@ -333,14 +333,14 @@ class TestProfileScopedPostSetup:
         )
         monkeypatch.setattr(
             "hermes_cli.tools_config.valid_post_setup_keys",
-            lambda: {"agent_browser"},
+            lambda: {"piper"},
         )
         resp = client.post(
-            "/api/tools/toolsets/browser/post-setup",
-            json={"key": "agent_browser"},
+            "/api/tools/toolsets/tts/post-setup",
+            json={"key": "piper"},
         )
         assert resp.status_code == 200
-        assert calls == [["tools", "post-setup", "agent_browser"]]
+        assert calls == [["tools", "post-setup", "piper"]]
 
 
 class TestProfileScopedChatPty:

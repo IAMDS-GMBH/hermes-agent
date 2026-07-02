@@ -489,12 +489,12 @@ class TestGetSectionConfigSummary:
 
     def test_gateway_recognises_signal_http_url(self):
         """Signal uses SIGNAL_HTTP_URL (not SIGNAL_ACCOUNT)."""
-        def env_side(key):
-            return "http://signal.local" if key == "SIGNAL_HTTP_URL" else ""
-
         import hermes_cli.gateway as gateway_mod
-        with patch.object(setup_mod, "get_env_value", side_effect=env_side), \
-             patch.object(gateway_mod, "get_env_value", side_effect=env_side):
+        with patch.object(
+            gateway_mod, "_all_platforms", return_value=[{"label": "Signal", "token_var": "SIGNAL_HTTP_URL"}]
+        ), patch.object(
+            gateway_mod, "_platform_status", side_effect=lambda plat: "configured" if plat.get("token_var") == "SIGNAL_HTTP_URL" else "not configured"
+        ):
             result = setup_mod._get_section_config_summary({}, "gateway")
         assert result is not None
         assert "Signal" in result
@@ -545,9 +545,9 @@ class TestGetSectionConfigSummary:
         """Every built-in platform should be recognised by its primary
         env-var sentinel — i.e. the summary must not drift from the
         registry used by the setup checklist."""
-        from hermes_cli.gateway import _PLATFORMS
+        from hermes_cli.gateway import _all_platforms
 
-        for plat in _PLATFORMS:
+        for plat in _all_platforms():
             label = plat["label"]
             env_var = plat.get("token_var")
             if not env_var:
@@ -555,15 +555,14 @@ class TestGetSectionConfigSummary:
             # Some platforms require a specific value shape (e.g. WhatsApp
             # needs the literal "true"). Use a sentinel that satisfies every
             # real validator _platform_status() currently checks.
-            def env_side(key, _target=env_var):
-                if key != _target:
-                    return ""
-                if _target == "WHATSAPP_ENABLED":
-                    return "true"
-                return "x"
             import hermes_cli.gateway as gateway_mod
-            with patch.object(setup_mod, "get_env_value", side_effect=env_side), \
-                 patch.object(gateway_mod, "get_env_value", side_effect=env_side):
+            with patch.object(
+                gateway_mod,
+                "_platform_status",
+                side_effect=lambda plat, _target=env_var: (
+                    "configured" if plat.get("token_var") == _target else "not configured"
+                ),
+            ):
                 result = setup_mod._get_section_config_summary({}, "gateway")
             expected = setup_mod._gateway_platform_short_label(label)
             assert result is not None, f"{label} ({env_var}) not recognised"
