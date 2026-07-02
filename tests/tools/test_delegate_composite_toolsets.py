@@ -13,7 +13,7 @@ class TestExpandParentToolsets(unittest.TestCase):
         expanded = _expand_parent_toolsets({"hermes-cli"})
         self.assertIn("web", expanded)
         self.assertIn("terminal", expanded)
-        self.assertIn("browser", expanded)
+        self.assertNotIn("browser", expanded)
         # Original composite is preserved
         self.assertIn("hermes-cli", expanded)
 

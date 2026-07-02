@@ -227,7 +227,9 @@ class TestToolsetConsistency:
             assert core.issubset(ts), f"{name} is missing core tools: {core - ts}"
         # Sanity: the shared core must be non-trivial (i.e. we didn't
         # silently let a platform diverge so far that nothing is shared).
-        assert len(core) > 20, f"Suspiciously small shared core: {len(core)} tools"
+        # Browser/image/video/etc. are intentionally hard-disabled at runtime,
+        # so the shared core is smaller than historical "full platform" sets.
+        assert len(core) > 10, f"Suspiciously small shared core: {len(core)} tools"
 
 
 class TestPluginToolsets:
