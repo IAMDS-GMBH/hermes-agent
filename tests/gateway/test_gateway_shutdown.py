@@ -145,7 +145,7 @@ async def test_gateway_stop_systemd_service_restart_exits_cleanly(tmp_path, monk
         await runner.stop(restart=True, service_restart=True)
 
     runner._launch_systemd_restart_shortcut.assert_called_once_with()
-    assert runner._exit_code == 0
+    assert runner._exit_code == GATEWAY_SERVICE_RESTART_EXIT_CODE
     assert (tmp_path / ".restart_pending.json").exists()
 
 

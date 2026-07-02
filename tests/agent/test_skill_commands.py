@@ -657,6 +657,23 @@ Generate some audio.
         assert 'DEPENDENCY SKILL LOADED: "grilling"' in msg
         assert "Dependency body." in msg
 
+    def test_delegates_to_dependency_when_model_invocation_disabled(self, tmp_path):
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(
+                tmp_path,
+                "grill-me",
+                frontmatter_extra="disable-model-invocation: true\n",
+                body="Run a `/grilling` session.",
+            )
+            _make_skill(tmp_path, "grilling", body="Dependency grilling flow.")
+            scan_skill_commands()
+            msg = build_skill_invocation_message("/grill-me", "focus on risks")
+
+        assert msg is not None
+        assert 'delegates execution to the "grilling" skill' in msg
+        assert "Dependency grilling flow." in msg
+        assert "focus on risks" in msg
+
 
 class TestSkillDirectoryHeader:
     """The activation message must expose the absolute skill directory and

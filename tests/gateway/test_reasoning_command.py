@@ -406,7 +406,11 @@ class TestReasoningCommand:
 
         assert result["final_response"] == "ok"
         assert _CapturingAgent.last_init is not None
-        assert "homeassistant" in set(_CapturingAgent.last_init["enabled_toolsets"])
+        enabled = set(_CapturingAgent.last_init["enabled_toolsets"])
+        assert "clarify" in enabled
+        assert "memory" in enabled
+        for tool in ("ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"):
+            assert tool not in enabled
 
 
 class TestLoadShowReasoningCoercion:

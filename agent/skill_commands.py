@@ -258,6 +258,36 @@ def _extract_dependency_skill_keys(
     return out
 
 
+def _skill_disables_model_invocation(loaded_skill: dict[str, Any]) -> bool:
+    """Return True when skill frontmatter requests dependency-only execution."""
+    try:
+        from agent.skill_utils import parse_frontmatter
+    except Exception:
+        return False
+
+    raw_content = str(
+        loaded_skill.get("raw_content") or loaded_skill.get("content") or ""
+    )
+    if not raw_content:
+        return False
+
+    frontmatter, _ = parse_frontmatter(raw_content)
+    if not isinstance(frontmatter, dict):
+        return False
+
+    raw = frontmatter.get("disable-model-invocation")
+    if raw is None:
+        raw = frontmatter.get("disable_model_invocation")
+
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return raw != 0
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return False
+
+
 def _build_skill_message(
     loaded_skill: dict[str, Any],
     skill_dir: Path | None,
@@ -565,6 +595,34 @@ def build_skill_invocation_message(
 
     loaded_skill, skill_dir, skill_name = loaded
 
+    dependency_keys = _extract_dependency_skill_keys(loaded_skill, commands, cmd_key)
+    if _skill_disables_model_invocation(loaded_skill) and dependency_keys:
+        dep_cmd_key = dependency_keys[0]
+        dep_info = commands.get(dep_cmd_key)
+        if dep_info:
+            dep_loaded = _load_skill_payload(dep_info["skill_dir"], task_id=task_id)
+            if dep_loaded:
+                dep_skill, dep_dir, dep_name = dep_loaded
+                try:
+                    from tools.skill_usage import bump_use
+
+                    bump_use(dep_name)
+                except Exception:
+                    pass
+
+                return _build_skill_message(
+                    dep_skill,
+                    dep_dir,
+                    (
+                        f'[IMPORTANT: The user invoked "{skill_name}", which delegates '
+                        f'execution to the "{dep_name}" skill. Follow the delegated '
+                        "skill instructions below for this turn.]"
+                    ),
+                    user_instruction=user_instruction,
+                    runtime_note=runtime_note,
+                    session_id=task_id,
+                )
+
     # Track active usage for Curator lifecycle management (#17782)
     try:
         from tools.skill_usage import bump_use
@@ -586,7 +644,7 @@ def build_skill_invocation_message(
     )
 
     dependency_blocks: list[str] = []
-    for dep_cmd_key in _extract_dependency_skill_keys(loaded_skill, commands, cmd_key):
+    for dep_cmd_key in dependency_keys:
         dep_info = commands.get(dep_cmd_key)
         if not dep_info:
             continue
