@@ -2352,7 +2352,7 @@ function Apply-BootstrapCredentials {
                 }
             } catch {}
             $memoryEntry = @"
-              $mcpServerName:
+              ${mcpServerName}:
                 url: $mcpServerUrl
                 headers:
                   Authorization: "Bearer $bootstrapApiKey"
