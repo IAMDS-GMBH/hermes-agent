@@ -25,7 +25,7 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
     3. OPENAI_BASE_URL env var
     4. First provider entry with a base_url (the model provider is usually LiteLLM)
     """
-    from hermes_cli.config import load_config
+    from hermes_cli.config import get_env_value, load_config
 
     cfg = load_config() or {}
     skills_cfg = cfg.get("skills", {}) if isinstance(cfg, dict) else {}
@@ -40,10 +40,12 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
     ).strip().rstrip("/")
     if base_url.endswith("/v1"):
         base_url = base_url[:-3]
+    # Prefer IAMDS/LiteLLM runtime secrets from env/.env over a potentially
+    # stale key persisted in config.yaml.
     api_key = str(
-        hub_cfg.get("api_key")
-        or os.getenv("IAMDS_LITELLM_API_KEY")
-        or os.getenv("LITELLM_KEY")
+        get_env_value("IAMDS_LITELLM_API_KEY")
+        or get_env_value("LITELLM_KEY")
+        or hub_cfg.get("api_key")
         or ""
     ).strip()
     timeout_raw = hub_cfg.get("timeout", 20)
