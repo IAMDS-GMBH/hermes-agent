@@ -104,11 +104,10 @@ class TestRemoteMcpMemoryPrompt:
     _PREF_MCP_SKILL_READ = f"mcp_{SINGLE_MCP_SERVER_NAME}_mcp_memory_skill_read"
 
     def test_uses_prefixed_remote_mcp_memory_context_tool_name(self):
-        prefixed = f"{SINGLE_MCP_SERVER_NAME}_memory_memory_context"
-        agent = _make_agent(valid_tool_names=[prefixed], platform="cli")
+        agent = _make_agent(valid_tool_names=[self._PREF_MCP_CONTEXT], platform="cli")
         stable = _stable_prompt(agent)
         assert "# Memory Context (mandatory)" in stable
-        assert f"FIRST action in this session must be a call to `{prefixed}`" in stable
+        assert f"FIRST action in this session must be a call to `{self._PREF_MCP_CONTEXT}`" in stable
         assert "including `skill_view` and any memory read/list/search tools" in stable
         assert "asks for their name" in stable
         assert "primary source and call it before using any other memory tool" in stable

@@ -1430,7 +1430,11 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
 def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> str | None:
     """Return the callable memory_context tool name from active tools.
 
-    Supports native and prefixed names, including:
+    Supports native and prefixed names. Canonical MCP naming is:
+    ``mcp_{hermes_mcp_name}_{server_name}_{tool}`` (for example
+    ``mcp_remoteMCP_mcp_memory_memory_context``).
+
+    Supported patterns include:
     - ``memory_context``
     - ``mcp_<configured_server>_*_memory_context``
     - ``<configured_server>_*_memory_context``
@@ -1480,7 +1484,10 @@ def _resolve_memory_context_tool_name(valid_tool_names: "set[str] | None") -> st
 def _resolve_memory_skill_read_tool_name(valid_tool_names: "set[str] | None") -> str | None:
     """Return the callable memory skill_read tool name from active tools.
 
-    Supports native and prefixed names, including:
+    Supports native and prefixed names. Canonical MCP naming is:
+    ``mcp_{hermes_mcp_name}_{server_name}_{tool}``.
+
+    Supported patterns include:
     - ``memory_skill_read``
     - ``mcp_<configured_server>_*_memory_skill_read``
     - ``<configured_server>_*_memory_skill_read``
