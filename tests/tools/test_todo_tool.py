@@ -1,6 +1,8 @@
 """Tests for the todo tool module."""
 
 import json
+import sqlite3
+import time
 
 from tools.todo_tool import TodoStore, todo_tool
 
@@ -117,6 +119,21 @@ class TestTodoToolFunction:
     def test_no_store_returns_error(self):
         result = json.loads(todo_tool())
         assert "error" in result
+
+    def test_read_mode_hides_stale_items_older_than_one_day(self):
+        store = TodoStore()
+        store.write([{"id": "1", "content": "Stale task", "status": "pending"}])
+        db_path = store._store._db_path  # pylint: disable=protected-access
+        stale_created_at = time.time() - (25 * 60 * 60)
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE todos SET created_at = ?, updated_at = ? WHERE id = ?",
+                (stale_created_at, stale_created_at, "1"),
+            )
+
+        result = json.loads(todo_tool(store=store))
+        assert result["summary"]["total"] == 0
+        assert result["todos"] == []
 
 
 class TestTodoStoreBounds:

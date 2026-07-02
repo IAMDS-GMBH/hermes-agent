@@ -3039,10 +3039,10 @@ class TestNewEndpoints:
 
     def test_get_toolset_config_no_category_toolset(self):
         """A toolset without a TOOL_CATEGORIES entry returns has_category False."""
-        resp = self.client.get("/api/tools/toolsets/todo/config")
+        resp = self.client.get("/api/tools/toolsets/desktop_todos/config")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["name"] == "todo"
+        assert data["name"] == "desktop_todos"
         assert data["has_category"] is False
         assert data["providers"] == []
 

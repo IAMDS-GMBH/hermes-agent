@@ -182,7 +182,9 @@ TODO_PERSISTENCE_GUIDANCE = (
     "If the `todo` tool is available, use it as the canonical place to store user todo tasks. "
     "Todos are persistent across sessions and power the Desktop Todos view, "
     "so prefer `todo` over memory or ad-hoc text/task tracking for todo state. "
-    "When the user asks to add/update/complete a task, update `todo` instead of writing task state to memory."
+    "When the user asks to add/update/complete a task, update `todo` instead of writing task state to memory. "
+    "Before adding tasks, call `todo` with no params to read the current list and avoid redundant entries. "
+    "When changing part of the list, prefer `merge=true` updates to edit existing items by id instead of re-adding duplicates."
 )
 
 KANBAN_GUIDANCE = (

@@ -14,6 +14,7 @@ Design:
 """
 
 import json
+import time
 from typing import Dict, Any, List, Optional
 
 from tools.persistent_todo_store import PersistentTodoStore
@@ -31,6 +32,7 @@ VALID_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
 MAX_TODO_CONTENT_CHARS = 4000
 MAX_TODO_ITEMS = 256
 _TRUNCATION_MARKER = "… [truncated]"
+_TODO_MAX_VISIBLE_AGE_SECONDS = 24 * 60 * 60
 
 
 class TodoStore:
@@ -75,11 +77,17 @@ class TodoStore:
                 normalized.append(clean)
         if len(normalized) > MAX_TODO_ITEMS:
             normalized = normalized[:MAX_TODO_ITEMS]
-        return self._store.write(normalized, merge=merge)
+        self._store.write(normalized, merge=merge)
+        return self.read()
 
     def read(self) -> List[Dict[str, str]]:
         """Return a copy of the current list."""
-        return self._store.read()
+        min_created_at = time.time() - _TODO_MAX_VISIBLE_AGE_SECONDS
+        return [
+            {"id": str(row["id"]), "content": str(row["content"]), "status": str(row["status"])}
+            for row in self._store.read_with_meta()
+            if float(row.get("created_at", 0.0)) >= min_created_at
+        ]
 
     def has_items(self) -> bool:
         """Check if there are any items in the list."""
@@ -92,7 +100,7 @@ class TodoStore:
         Returns a human-readable string to append to the compressed
         message history, or None if the list is empty.
         """
-        items = self._store.read()
+        items = self.read()
         if not items:
             return None
 
@@ -224,6 +232,7 @@ TODO_SCHEMA = {
         "with 3+ steps or when the user provides multiple tasks. "
         "Call with no parameters to read the current list.\n\n"
         "Writing:\n"
+        "- Read current list first when adding/changing tasks so you can avoid duplicates\n"
         "- Provide 'todos' array to create/update items\n"
         "- merge=false (default): replace the entire list with a fresh plan\n"
         "- merge=true: update existing items by id, add any new ones\n\n"
