@@ -44,8 +44,6 @@ def resolve_litellm_hub_settings() -> Dict[str, Any]:
         hub_cfg.get("api_key")
         or os.getenv("IAMDS_LITELLM_API_KEY")
         or os.getenv("LITELLM_KEY")
-        or os.getenv("OPENAI_API_KEY")
-        or _first_provider_api_key(cfg)
         or ""
     ).strip()
     timeout_raw = hub_cfg.get("timeout", 20)
@@ -73,20 +71,6 @@ def _first_provider_base_url(cfg: Dict[str, Any]) -> str:
             val = entry.get(key)
             if isinstance(val, str) and val.strip():
                 return val.strip().rstrip("/")
-    return ""
-
-
-def _first_provider_api_key(cfg: Dict[str, Any]) -> str:
-    """Return the api_key of the first configured provider entry, if any."""
-    providers = cfg.get("providers", {}) if isinstance(cfg, dict) else {}
-    if not isinstance(providers, dict):
-        return ""
-    for entry in providers.values():
-        if not isinstance(entry, dict):
-            continue
-        val = entry.get("api_key")
-        if isinstance(val, str) and val.strip():
-            return val.strip()
     return ""
 
 
@@ -261,4 +245,3 @@ def set_active_agents(agent_names: list[str]) -> None:
     hub = skills.setdefault("litellm_hub", {})
     hub["active_agents"] = sorted(set(agent_names))
     save_config(cfg)
-
